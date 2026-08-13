@@ -1,0 +1,317 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+//
+// These four are enums because each is a small, fixed, developer-owned list
+// with no per-row data attached. Topic is deliberately NOT an enum: it needs
+// its own foreign keys (TopicMastery points at it), and an enum value cannot
+// be the target of a relation.
+// ---------------------------------------------------------------------------
+
+enum Provider {
+  LEETCODE
+  CODEFORCES
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  COMPLETED
+  FAILED
+}
+
+enum DifficultyBand {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SolveStatus {
+  SOLVED
+  ATTEMPTED
+}
+
+// ---------------------------------------------------------------------------
+// User
+//
+// Same shape as JAN-AI's User model — reused, not re-derived.
+// cuid() ids throughout: ids appear in URLs, and sequential integers leak
+// record counts and allow enumeration.
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String // bcrypt hash, never plaintext
+  name      String
+  createdAt DateTime @default(now())
+
+  // All four are the user's OWN data, so all four cascade on delete.
+  linkedAccounts LinkedAccount[]
+  userProblems   UserProblem[]
+  topicMasteries TopicMastery[]
+  revisionItems  RevisionItem[]
+}
+
+// ---------------------------------------------------------------------------
+// LinkedAccount — a user's connection to an external judge.
+//
+// A separate table rather than leetcodeHandle/codeforcesHandle columns on User
+// because each link carries its own sync state. Inline columns would need
+// leetcodeSyncStatus, leetcodeLastSyncedAt, codeforcesSyncStatus, ... and a
+// third provider would mean an ALTER TABLE. Here it is one enum value + one row.
+// ---------------------------------------------------------------------------
+
+model LinkedAccount {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the link is the user's own and nothing else refers to it.
+
+  provider Provider
+  handle   String
+
+  // Caching state: we read from our own DB, not the upstream, on every page load.
+  syncStatus   SyncStatus @default(PENDING)
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ratingChanges RatingChange[]
+
+  // One linked account per provider per user. Enforced by the database, not by
+  // an application check: a read-then-write check lets two concurrent requests
+  // both see "none exists" before either inserts.
+  //
+  // No separate @@index([userId]) is needed — this unique already serves
+  // lookups by userId via its leftmost prefix.
+  @@unique([userId, provider])
+}
+
+// ---------------------------------------------------------------------------
+// Topic — the canonical DSA topic list. A TABLE, not an enum.
+//
+// slug is the stable machine key that provider tags map onto; name is display.
+// Seeded by prisma/seed.ts via upsert on slug, so re-seeding is safe.
+// ---------------------------------------------------------------------------
+
+model Topic {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  problemTopics  ProblemTopic[]
+  topicMasteries TopicMastery[]
+}
+
+// ---------------------------------------------------------------------------
+// Problem — one row per problem, SHARED by all users (not per-user copies).
+// Two users who solved "Two Sum" point at this same row, which is what makes
+// "problems in this topic the user has NOT solved" a single query.
+//
+// Two difficulty columns: LeetCode grades Easy/Medium/Hard, Codeforces grades
+// 800-3500. The engine must rank both in one list and cannot compare a word to
+// an integer. difficultyRaw keeps the provider's value verbatim (truth, for
+// display); difficultyBand is the normalized value the engine queries.
+// Conversion happens once, at import, in the provider module.
+//
+// Codeforces cutoffs (our judgment call, not a standard):
+//   < 1200 EASY | 1200-1799 MEDIUM | >= 1800 HARD
+// Unrated Codeforces problems are dropped at import, which is why both columns
+// are NOT NULL.
+// ---------------------------------------------------------------------------
+
+model Problem {
+  id         String   @id @default(cuid())
+  provider   Provider
+  externalId String // LeetCode title-slug, or Codeforces contestId+index
+
+  title String
+  url   String
+
+  difficultyRaw  String // "Medium", "1600" — provider's own value, display only
+  difficultyBand DifficultyBand // normalized — engine only
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  problemTopics ProblemTopic[]
+  userProblems  UserProblem[]
+  revisionItems RevisionItem[]
+
+  // The same problem must never be imported twice. Scoped by provider because
+  // the two providers' id spaces are unrelated and could collide by coincidence.
+  // Also serves the importer's upsert lookup.
+  @@unique([provider, externalId])
+  // Serves the engine's difficulty filter when selecting candidate problems.
+  @@index([difficultyBand])
+}
+
+// ---------------------------------------------------------------------------
+// ProblemTopic — many-to-many join table.
+//
+// A problem has several topics; a topic has thousands of problems. A column
+// holds one value, so neither side can point at the other — the relationship
+// has no home except its own table.
+//
+// Compound PK instead of a surrogate id: the pair IS the identity of the row.
+// A surrogate id would add an unused column AND permit duplicate pairings,
+// since two rows with different ids but the same pair would both be legal.
+// ---------------------------------------------------------------------------
+
+model ProblemTopic {
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  // Cascade: a mapping row is meaningless without its problem, and the
+  // importer regenerates these anyway.
+
+  topicId String
+  topic   Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  // Cascade: same reasoning from the other side.
+
+  @@id([problemId, topicId])
+  // The engine's core lookup: "all problems tagged with weak topic X".
+  // The reverse ("topics of this problem") is served by the PK's leftmost column.
+  @@index([topicId])
+}
+
+// ---------------------------------------------------------------------------
+// UserProblem — what a user has done with a problem.
+//
+// Scope decision: we store DERIVED state, not raw submission history. One row
+// per (user, problem), never one per submission. The engine only asks "solved?
+// and how much did they struggle", which status + attemptCount answer directly.
+// Full history is far more data for no feature in scope, and the provider
+// remains the system of record if we ever need it.
+// ---------------------------------------------------------------------------
+
+model UserProblem {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: this is the user's own progress data.
+
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Restrict)
+  // Restrict, NOT Cascade: Problem is shared reference data. Deleting a problem
+  // would silently erase real user solve history — fail loudly instead.
+
+  status          SolveStatus
+  attemptCount    Int         @default(1)
+  solvedAt        DateTime? // null while status is ATTEMPTED
+  lastAttemptedAt DateTime
+
+  @@unique([userId, problemId])
+  // Serves the mastery recompute's join on problemId, and the scan PostgreSQL
+  // runs to enforce the Restrict above. Lookups by userId use the unique's
+  // leftmost prefix, so no separate index for those.
+  @@index([problemId])
+}
+
+// ---------------------------------------------------------------------------
+// TopicMastery — per-user, per-topic score.
+//
+// DELIBERATE DENORMALIZATION. This is fully derivable from UserProblem joined
+// to ProblemTopic, so strictly it should not exist. It exists because the
+// engine's most frequent question — "what are this user's weakest topics?" —
+// is a full aggregation over their solve history when computed live, versus an
+// indexed ~20-row lookup when stored.
+//
+// The named cost: the score can be stale. It is only as fresh as the last
+// recompute, which runs after each import. Acceptable because the underlying
+// data is already periodic (on-demand import, not a live feed) — but it makes
+// the recompute correctness-critical code.
+//
+// The scoring formula is engine logic (Module 5), not schema.
+// ---------------------------------------------------------------------------
+
+model TopicMastery {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the user's own progress data.
+
+  topicId String
+  topic   Topic  @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  // Restrict: deleting a canonical topic would erase earned mastery scores.
+
+  solvedCount    Int
+  attemptedCount Int
+  masteryScore   Float // 0.0 - 1.0
+  lastUpdatedAt  DateTime @updatedAt
+
+  @@unique([userId, topicId])
+  // Serves the Restrict check on topic delete. The engine's hottest query
+  // ("my weak topics", filtering by userId) uses the unique's leftmost prefix.
+  @@index([topicId])
+}
+
+// ---------------------------------------------------------------------------
+// RatingChange — contest history (Codeforces primarily).
+//
+// Hangs off LinkedAccount, NOT User, because a rating change is a fact about a
+// HANDLE, not about a person. On User it would need its own provider column,
+// and one person's rows could mix two handles' rating curves into a single
+// meaningless graph. On LinkedAccount the provider is implied by the parent,
+// and unlinking correctly discards a history that has become meaningless.
+// ---------------------------------------------------------------------------
+
+model RatingChange {
+  id String @id @default(cuid())
+
+  linkedAccountId String
+  linkedAccount   LinkedAccount @relation(fields: [linkedAccountId], references: [id], onDelete: Cascade)
+  // Cascade: the history belongs to the link and is re-importable from Codeforces.
+
+  contestId   Int // the provider's own contest id
+  contestName String
+  oldRating   Int
+  newRating   Int
+  rank        Int
+  ratedAt     DateTime
+
+  // The rating-progress graph: one account's changes, ordered by date.
+  @@index([linkedAccountId, ratedAt])
+}
+
+// ---------------------------------------------------------------------------
+// RevisionItem — spaced-repetition planner state.
+//
+// Stores ONLY the state the planner needs. The scheduling algorithm lives in
+// code, so it can change without a migration.
+// ---------------------------------------------------------------------------
+
+model RevisionItem {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the user's own progress data.
+
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Restrict)
+  // Restrict: a user's revision schedule is not the problem's to delete.
+
+  dueAt           DateTime
+  intervalDays    Int
+  repetitionCount Int
+  lastReviewedAt  DateTime?
+
+  @@unique([userId, problemId])
+  // The planner's main query: "what is due for me now".
+  @@index([userId, dueAt])
+  // The Restrict check on problem delete.
+  @@index([problemId])
+}
