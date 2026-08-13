@@ -1,8 +1,31 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import authRoutes from "./routes/auth";
 
 const app = express();
+
+// MIDDLEWARE ORDER IS CAUSAL, NOT STYLISTIC. Each piece prepares something the
+// next one depends on:
+//
+//   cors()          - if it ran after the routes, the route would still respond
+//                     but without Access-Control-Allow-Origin, so the browser
+//                     would block the response. Preflight OPTIONS would 404.
+//   express.json()  - if it ran after the routes, req.body would be undefined
+//                     and `const { email } = req.body` would throw a TypeError,
+//                     turning every POST into a 500.
+//   cookieParser()  - if it ran after the routes, req.cookies would be
+//                     undefined, so requireAuth would find no token and EVERY
+//                     authenticated request would 401 while the cookie sat
+//                     right there in the request headers. The subtlest of the
+//                     three, because nothing crashes.
+//
+// Separately: server.ts imports "dotenv/config" BEFORE it imports this file,
+// which matters because line ~30 below reads process.env.FRONTEND_URL at module
+// scope — during import evaluation, not at request time. Reverse those two
+// imports and FRONTEND_URL is undefined, CORS silently falls back to the
+// hardcoded default, and nothing errors. Silent misconfiguration is the worst
+// failure mode, so the order in server.ts is load-bearing.
 
 app.use(
   cors({
@@ -19,5 +42,32 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Routes get mounted here as modules are built (auth, codeforces, leetcode, ...)
+app.use("/api/auth", authRoutes);
+
+// 404 catch-all. MUST come after every route: app.use() with no path matches
+// everything, so registered any earlier it would swallow the whole app.
+// Without it, an unknown path falls through to Express's default handler and
+// returns an HTML error page, which breaks a JSON client's response parsing.
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+// Error handler. MUST be registered LAST — Express only forwards an error
+// FORWARD through the stack, so a handler registered before the routes never
+// sees their errors.
+//
+// Express tells an error handler apart from ordinary middleware by inspecting
+// the function's ARITY: fn.length === 4. Delete the unused `_next` parameter
+// and the arity drops to 3, Express silently registers this as normal
+// middleware, it never receives a single error, and errors fall through to
+// Express's built-in handler — which in development puts the full stack trace
+// in the response body. The parameter must exist even though it is never used.
+//
+// The real error goes to the server log; the client gets a generic message so
+// we never leak stack traces, file paths or internal error text.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Something went wrong" });
+});
 
 export default app;
