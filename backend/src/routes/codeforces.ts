@@ -1,7 +1,8 @@
-import { Prisma, Provider, SyncStatus } from "@prisma/client";
+import { Prisma, Provider } from "@prisma/client";
 import { Router } from "express";
 import { asyncHandler } from "../lib/asyncHandler";
 import prisma from "../lib/prisma";
+import { acquireSyncLock, completeSync, failSync } from "../lib/syncLock";
 import { requireAuth } from "../middleware/requireAuth";
 import { CodeforcesError, getUserInfo } from "../providers/codeforces/client";
 import {
@@ -25,20 +26,6 @@ const router = Router();
 // no per-route work. Non-browser clients (curl, Postman) must send an Origin
 // header or they get a 403.
 // ---------------------------------------------------------------------------
-
-// A SYNC IS A LOCK, AND LOCKS STRAND.
-//
-// syncStatus = SYNCING is a mutex: it stops two imports for the same account
-// running at once. But if the process dies mid-import — a deploy, an OOM, a
-// pulled plug — nothing ever writes COMPLETED or FAILED, the row sits at
-// SYNCING forever, and the user can NEVER sync again. There is no timeout on a
-// database column.
-//
-// So the lock needs an expiry. Any SYNCING older than this is treated as
-// abandoned and may be reclaimed. Five minutes is comfortably longer than the
-// slowest observed sync (~20 s) while still being a short wait for a user who
-// hit a genuine crash.
-const STALE_SYNC_MS = 5 * 60 * 1000;
 
 // Codeforces handles use a restricted character set. This check is a GUARD,
 // NOT A GATEKEEPER: user.info is the authority on whether a handle exists, and
@@ -197,31 +184,11 @@ router.post(
         .json({ error: "No Codeforces account is linked" });
     }
 
-    // ACQUIRE THE LOCK AS AN ATOMIC COMPARE-AND-SET.
-    //
-    // Written as read-then-write ("is it SYNCING? no? then set SYNCING") this
-    // would have the same race as every other check-then-act in this project:
-    // two requests both read "not syncing" and both proceed. Putting the
-    // condition inside the WHERE clause makes the database decide, and
-    // `count` tells us whether we won.
-    //
-    // The OR is the stale-lock escape: a SYNCING row whose updatedAt is older
-    // than STALE_SYNC_MS is treated as abandoned and reclaimed. updatedAt is
-    // @updatedAt, so writing SYNCING stamps the acquisition time for free —
-    // the lock's age is simply its last write.
-    const staleCutoff = new Date(Date.now() - STALE_SYNC_MS);
-    const acquired = await prisma.linkedAccount.updateMany({
-      where: {
-        id: account.id,
-        OR: [
-          { syncStatus: { not: SyncStatus.SYNCING } },
-          { updatedAt: { lt: staleCutoff } },
-        ],
-      },
-      data: { syncStatus: SyncStatus.SYNCING },
-    });
-
-    if (acquired.count === 0) {
+    // ACQUIRE THE LOCK. The atomic compare-and-set and the stale-lock escape
+    // both live in lib/syncLock.ts, shared with the LeetCode route — see that
+    // file for why this specific piece was worth extracting when the
+    // surrounding handlers were not.
+    if (!(await acquireSyncLock(account.id))) {
       return res.status(409).json({ error: "A sync is already in progress" });
     }
 
@@ -234,23 +201,14 @@ router.post(
 
       // lastSyncedAt advances ONLY here, on the success path. Moving it on
       // failure would claim a freshness we do not have.
-      await prisma.linkedAccount.update({
-        where: { id: account.id },
-        data: {
-          syncStatus: SyncStatus.COMPLETED,
-          lastSyncedAt: new Date(),
-        },
-      });
+      await completeSync(account.id);
 
       return res.json({ handle: account.handle, ...result });
     } catch (error) {
       // A FAILED IMPORT IS A RECOVERABLE STATE, NEVER A CRASH. The lock is
       // released by moving to FAILED, so the user can retry immediately
       // instead of waiting out the staleness window.
-      await prisma.linkedAccount.update({
-        where: { id: account.id },
-        data: { syncStatus: SyncStatus.FAILED },
-      });
+      await failSync(account.id);
 
       if (error instanceof CodeforcesError) {
         return res

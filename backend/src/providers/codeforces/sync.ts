@@ -15,7 +15,8 @@ import {
   toProblemUrl,
   type ImportableProblem,
 } from "./mapping";
-import { UnmappedTagCounter, mapTagsToSlugs } from "./tags";
+import { UnmappedTagCounter } from "../../lib/unmappedTagCounter";
+import { mapTagsToSlugs } from "./tags";
 
 // ---------------------------------------------------------------------------
 // THE WRITE PATHS.

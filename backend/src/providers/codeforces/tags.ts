@@ -17,7 +17,14 @@
 // across 11,051 rated problems. Guessing the vocabulary would have produced
 // "sorting" (CF says "sortings"), "dynamic programming" (CF says "dp") and
 // "union find" (CF says "dsu") — three silent misses.
+//
+// MODULE 5 NOTE: UnmappedTagCounter used to be defined in this file. It moved
+// to lib/unmappedTagCounter.ts once LeetCode became a second caller — it has no
+// provider-specific behaviour, and the LeetCode module importing it from HERE
+// would have coupled the two providers together for no reason.
 // ---------------------------------------------------------------------------
+
+import { UnmappedTagCounter } from "../../lib/unmappedTagCounter";
 
 // Dropped BY NAME rather than falling through the unmapped path. "*special" is
 // Codeforces' marker for problems with unusual judging, not a subject area, so
@@ -123,38 +130,6 @@ export const TAG_TO_TOPIC_SLUG: Readonly<Record<string, string>> = {
 // broken: engine/recommend.ts guards its exploratory stage with
 // `if (candidate) add(...)`, so a topic with no candidates contributes nothing.
 // ---------------------------------------------------------------------------
-
-// Collects the tags we had no mapping for, so the table improves from REAL DATA
-// instead of guesswork. Reported once per run with counts rather than logged
-// per problem — 11,000 lines of "unmapped tag: geometry" is not a log anybody
-// reads.
-export class UnmappedTagCounter {
-  private readonly counts = new Map<string, number>();
-
-  record(tag: string): void {
-    this.counts.set(tag, (this.counts.get(tag) ?? 0) + 1);
-  }
-
-  // Sorted by frequency: the most common unmapped tag is the one worth adding
-  // a topic for next.
-  toSortedEntries(): { tag: string; count: number }[] {
-    return [...this.counts.entries()]
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-  }
-
-  log(label: string): void {
-    const entries = this.toSortedEntries();
-    if (entries.length === 0) {
-      console.log(`[${label}] no unmapped tags`);
-      return;
-    }
-    console.log(`[${label}] unmapped tags (${entries.length} distinct):`);
-    for (const { tag, count } of entries) {
-      console.log(`    ${String(count).padStart(6)}  ${tag}`);
-    }
-  }
-}
 
 // Translate one problem's Codeforces tags into our topic slugs.
 //

@@ -12,7 +12,8 @@
     "prisma:seed": "prisma db seed",
     "dev:seed": "tsx prisma/dev-seed.ts",
     "dev:seed:clean": "tsx prisma/dev-seed-clean.ts",
-    "sync:cf-problems": "tsx prisma/sync-cf-problems.ts"
+    "sync:cf-problems": "tsx prisma/sync-cf-problems.ts",
+    "sync:lc-problems": "tsx prisma/sync-lc-problems.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

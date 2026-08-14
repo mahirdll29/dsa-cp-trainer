@@ -1,8 +1,10 @@
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import aiRoutes from "./routes/ai";
 import authRoutes from "./routes/auth";
 import codeforcesRoutes from "./routes/codeforces";
+import leetcodeRoutes from "./routes/leetcode";
 import masteryRoutes from "./routes/mastery";
 import recommendationRoutes from "./routes/recommendations";
 import revisionRoutes from "./routes/revision";
@@ -69,9 +71,17 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mastery", masteryRoutes);
 app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/revision", revisionRoutes);
-// Module 4. Mounted under /api/integrations/<provider> so Module 5's LeetCode
-// routes become a sibling rather than a competing top-level namespace.
+// Modules 4 and 5. Mounted under /api/integrations/<provider>, which is why
+// adding the second provider was a one-line change rather than a namespace
+// argument — the shape anticipated a sibling and got one.
 app.use("/api/integrations/codeforces", codeforcesRoutes);
+app.use("/api/integrations/leetcode", leetcodeRoutes);
+// Module 6. Mounted like any other router, which is the point: the AI layer is
+// an ordinary sibling of the rest of the API, not something the pipeline runs
+// through. /api/recommendations above does not touch it and never calls Groq,
+// so this whole subtree can be unconfigured (or broken) without changing a
+// single byte of what the engine returns.
+app.use("/api/ai", aiRoutes);
 
 // 404 catch-all. MUST come after every route: app.use() with no path matches
 // everything, so registered any earlier it would swallow the whole app.
