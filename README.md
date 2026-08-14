@@ -216,7 +216,6 @@ Fixed interval ladder: **1 → 3 → 7 → 14 → 30 days** (then 30 repeating).
 - **Prisma select allowlists** — password hash is never included in API responses
 
 ---
-
 ## License
 
 This project is for learning and portfolio purposes.
