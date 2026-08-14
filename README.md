@@ -74,8 +74,8 @@ User's solve history (LeetCode + Codeforces)
 | 1. Schema | ✅ Done | 9 models, 4 enums, migrated to Neon, 32 topics seeded |
 | 2. Auth | ✅ Done | Register/login/logout/me + requireAuth middleware |
 | 3. Recommendation Engine | ✅ Done | Mastery formula, spaced repetition, 4-stage pipeline |
-| 4. Codeforces Integration | 🔜 Next | Official API — profile, submissions, rating history |
-| 5. LeetCode Integration | ⬜ | Community wrapper (alfa-leetcode-api) |
+| 4. Codeforces Integration | ✅ Done | Official API — global problem catalog, submissions, rating history |
+| 5. LeetCode Integration | 🔜 Next | Community wrapper (alfa-leetcode-api) |
 | 6. AI Layer | ⬜ | Hints, explanations, code review via Groq |
 | 7. Frontend | ⬜ | Next.js dashboard |
 
@@ -118,6 +118,14 @@ Problem ─→ ProblemTopic ←─ Topic
 | `POST` | `/api/revision/:problemId/review` | ✅ | Mark reviewed, advance interval |
 | `POST` | `/api/mastery/recompute` | ✅ | Rebuild mastery from current solve data |
 
+### Codeforces Integration (`/api/integrations/codeforces`)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/integrations/codeforces/link` | ✅ | Validate a handle and link it |
+| `POST` | `/api/integrations/codeforces/sync` | ✅ | Import submissions + rating history, then recompute mastery |
+| `GET` | `/api/integrations/codeforces/status` | ✅ | Sync state read from our DB, never from upstream |
+| `DELETE` | `/api/integrations/codeforces/link` | ✅ | Unlink and purge imported solve history |
+
 All non-GET requests are protected by an Origin-header CSRF check (registered globally).
 
 ---
@@ -146,18 +154,27 @@ cp .env.example .env
 npx prisma generate
 npx prisma migrate dev
 
-# Seed the 32 canonical DSA topics
+# Seed the 32 canonical DSA topics (required before any provider sync)
 npm run prisma:seed
+
+# Import the Codeforces problem catalog — the pool recommendations are drawn from
+npm run sync:cf-problems
 
 # Start the dev server
 npm run dev
 ```
+
+> **The catalog import is not optional.** The recommendation engine suggests problems you have
+> *not* solved, so it needs a pool of problems that exists independently of any user's history.
+> Without it, every "new material" recommendation returns empty. The import is idempotent, so
+> re-running it is safe and cheap.
 
 ### Development Commands
 
 ```bash
 npm run dev              # Start dev server (tsx watch)
 npm run prisma:seed      # Seed 32 canonical topics (idempotent)
+npm run sync:cf-problems # Import the Codeforces catalog (idempotent, ~45s first run)
 npm run dev:seed         # Seed test data for engine verification
 npm run dev:seed:clean   # Clean up test data
 npx prisma studio        # Browse database
@@ -204,6 +221,42 @@ Fixed interval ladder: **1 → 3 → 7 → 14 → 30 days** (then 30 repeating).
 **Total cap: 12.** Per-topic cap: 2. Every item carries a `reason` string for auditability.
 
 **Cold start:** brand-new users get a breadth sampler — one EASY problem per topic to generate initial mastery signals.
+
+---
+
+## Provider Integrations
+
+All calls to a provider live in **one module** (`src/providers/<provider>/`), so a breaking change
+upstream touches one file. Every response is validated before it reaches the database — even
+Codeforces', which is officially documented.
+
+### Notable decisions
+
+- **The problem catalog is global; submissions are per-user.** These are separate jobs. The engine
+  recommends problems you have *not* solved, so if `Problem` were populated only from your own
+  submissions, every row would be one you had already touched and the engine would return nothing —
+  silently.
+- **Idempotency replaces transactions.** ~37,000 writes can't go in one transaction, so every write
+  is keyed on a natural unique. A run that dies halfway converges on the same state when retried,
+  and `syncStatus` tells you a retry is needed.
+- **Batched, set-based writes.** Round-trip latency to a hosted Postgres (~250 ms measured) makes
+  per-row upsert loops unusable — the catalog would take ~3 hours instead of 45 seconds.
+- **One API call, no pagination.** The full submission history fits in a single response, which
+  means every sync is a *full* re-sync — so a rejudged verdict is picked up automatically, with no
+  incremental-sync blind spot.
+- **`syncStatus` is a mutex with an expiry.** A process that dies mid-import would otherwise leave
+  the account stuck on `SYNCING` forever. The lock is acquired with an atomic compare-and-set and
+  reclaimed after 5 minutes.
+- **Unlinking purges imported solve history but keeps revision progress.** Solve history is
+  re-importable from the provider; your spaced-repetition ladder is not.
+- **Unmapped provider tags are skipped, but the problem is still imported.** A solve recorded
+  against no topic beats a lost solve — and a *wrong* topic tag would corrupt mastery scores.
+
+### Known limitation
+
+Handle ownership is **not** verified — anyone can claim any handle. Recorded as a deliberate v1
+non-goal: the damage is confined to the claiming account (all imported data is already public),
+and a bypassable verification flow would be worse than an honest gap.
 
 ---
 

@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth";
+import codeforcesRoutes from "./routes/codeforces";
 import masteryRoutes from "./routes/mastery";
 import recommendationRoutes from "./routes/recommendations";
 import revisionRoutes from "./routes/revision";
@@ -68,6 +69,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mastery", masteryRoutes);
 app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/revision", revisionRoutes);
+// Module 4. Mounted under /api/integrations/<provider> so Module 5's LeetCode
+// routes become a sibling rather than a competing top-level namespace.
+app.use("/api/integrations/codeforces", codeforcesRoutes);
 
 // 404 catch-all. MUST come after every route: app.use() with no path matches
 // everything, so registered any earlier it would swallow the whole app.

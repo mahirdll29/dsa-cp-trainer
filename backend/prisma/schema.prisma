@@ -282,7 +282,22 @@ model RatingChange {
   rank        Int
   ratedAt     DateTime
 
+  // ONE RATING CHANGE PER CONTEST PER ACCOUNT. Added in Module 4.
+  //
+  // Without this there is no uniqueness guard at all, so a second sync inserts
+  // the ENTIRE rating history a second time and the progress graph draws every
+  // contest twice. With it, the sync is an upsert and re-running is a no-op.
+  //
+  // Same rule as everywhere else in this schema (see the LinkedAccount comment
+  // and architecture.md 2.5): the application check exists for the friendly
+  // error message, but the CONSTRAINT is the actual guarantee — it is the only
+  // thing that holds when two syncs interleave.
+  @@unique([linkedAccountId, contestId])
   // The rating-progress graph: one account's changes, ordered by date.
+  //
+  // KEPT even though the unique above already indexes linkedAccountId via its
+  // leftmost prefix: that prefix cannot serve ORDER BY ratedAt, which is the
+  // whole point of this index.
   @@index([linkedAccountId, ratedAt])
 }
 

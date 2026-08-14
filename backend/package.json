@@ -11,7 +11,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
     "dev:seed": "tsx prisma/dev-seed.ts",
-    "dev:seed:clean": "tsx prisma/dev-seed-clean.ts"
+    "dev:seed:clean": "tsx prisma/dev-seed-clean.ts",
+    "sync:cf-problems": "tsx prisma/sync-cf-problems.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
