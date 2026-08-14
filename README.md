@@ -13,39 +13,39 @@ User's solve history (LeetCode + Codeforces)
               │
               ▼
      ┌─────────────────┐
-     │  Import Pipeline │  ← Modules 4 & 5
-     │  (validate, map, │
-     │   store)         │
+     │  Import Pipeline│  ← Modules 4 & 5
+     │  (validate, map,│
+     │   store)        │
      └────────┬────────┘
               │
               ▼
      ┌─────────────────┐
-     │ Mastery Recompute│  ← Laplace-smoothed, volume-weighted
-     │ (per user×topic) │
+     │Mastery Recompute│  ← Laplace-smoothed, volume-weighted
+     │ (per user×topic)│
      └────────┬────────┘
               │
               ▼
      ┌─────────────────┐
-     │  Weak Area       │  ← Weak ≠ Unknown (different treatments)
-     │  Detection       │
+     │  Weak Area      │  ← Weak ≠ Unknown (different treatments)
+     │  Detection      │
      └────────┬────────┘
               │
               ▼
      ┌─────────────────┐
-     │  Difficulty      │  ← Just above current comfort
-     │  Selection       │
+     │  Difficulty     │  ← Just above current comfort
+     │  Selection      │
      └────────┬────────┘
               │
               ▼
      ┌─────────────────┐
-     │  Recommendation  │  ← Revisions → Unfinished → Weak → Exploratory
-     │  Assembly        │
+     │  Recommendation │  ← Revisions → Unfinished → Weak → Exploratory
+     │  Assembly       │
      └────────┬────────┘
               │
               ▼
      ┌─────────────────┐
-     │  AI Layer        │  ← Module 6: explains & hints, never decides
-     │  (Groq)          │
+     │  AI Layer       │  ← Module 6: explains & hints, never decides
+     │  (Groq)         │
      └─────────────────┘
 ```
 
