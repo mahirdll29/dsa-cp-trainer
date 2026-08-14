@@ -1,4 +1,4 @@
-# DSA/CP Coach — AI-Powered Training Platform
+# DSA/CP TRAINER
 
 A personalized learning platform for Data Structures & Algorithms and Competitive Programming. It imports your real activity from **LeetCode** and **Codeforces**, derives per-topic mastery from your solve history, and deterministically recommends what to solve next — weak topics first, at the right difficulty, with spaced repetition for problems you've already solved.
 
