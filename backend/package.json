@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "dev:seed": "tsx prisma/dev-seed.ts",
+    "dev:seed:clean": "tsx prisma/dev-seed-clean.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

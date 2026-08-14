@@ -2,6 +2,10 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth";
+import masteryRoutes from "./routes/mastery";
+import recommendationRoutes from "./routes/recommendations";
+import revisionRoutes from "./routes/revision";
+import { requireSameOrigin } from "./middleware/requireSameOrigin";
 
 const app = express();
 
@@ -37,12 +41,33 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+// CSRF protection, added in Module 3 because Module 3 introduces the first
+// authenticated state-changing endpoints. Registered GLOBALLY and before the
+// routes, rather than attached to the two writes that need it today.
+//
+// Per-route opt-in is a checklist item, and checklist items get forgotten on
+// route number twelve — which is how CSRF holes actually appear in real
+// codebases. Registering it once means every route added in Modules 4-7
+// inherits the protection by default and has to opt OUT deliberately.
+//
+// It also now covers /api/auth/login and /logout, which were previously
+// unprotected. Login CSRF is a real if minor attack: force a victim's browser
+// to log into the ATTACKER's account, and everything they then do accrues to it.
+//
+// Safe methods pass straight through, so this must sit above the routes but
+// below cookieParser — see requireSameOrigin.ts for why it fails closed and
+// what that costs non-browser clients.
+app.use(requireSameOrigin);
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
 // Routes get mounted here as modules are built (auth, codeforces, leetcode, ...)
 app.use("/api/auth", authRoutes);
+app.use("/api/mastery", masteryRoutes);
+app.use("/api/recommendations", recommendationRoutes);
+app.use("/api/revision", revisionRoutes);
 
 // 404 catch-all. MUST come after every route: app.use() with no path matches
 // everything, so registered any earlier it would swallow the whole app.
