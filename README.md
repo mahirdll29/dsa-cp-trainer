@@ -1,7 +1,6 @@
 # DSA/CP TRAINER — AI-Powered Training Platform
 
-### **`v1.0`** · [🔗 Live App](https://dsa-cp-trainer.vercel.app) · [Backend API](https://dsa-cp-trainer.onrender.com/api/health)
-
+### **`v1.0`** · [🔗 Live App](https://dsa-cp-trainer.vercel.app)
 A personalized learning platform for Data Structures & Algorithms and Competitive Programming. It imports your real activity from **LeetCode** and **Codeforces**, derives per-topic mastery from your solve history, and deterministically recommends what to solve next — weak topics first, at the right difficulty, with spaced repetition for problems you've already solved.
 
 **The recommendation engine is pure backend logic with no AI.** It is deterministic: the same inputs always produce the same recommendations. AI is layered on top for hints and explanations only — it never decides what you should solve.
