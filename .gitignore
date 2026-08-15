@@ -2,7 +2,7 @@ node_modules/
 dist/
 .next/
 .env
-.env.local
+.env.*
 *.log
 .DS_Store
 

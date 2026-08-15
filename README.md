@@ -1,5 +1,7 @@
 # DSA/CP TRAINER — AI-Powered Training Platform
 
+### **`v1.0`** · [🔗 Live App](https://dsa-cp-trainer.vercel.app) · [Backend API](https://dsa-cp-trainer.onrender.com/api/health)
+
 A personalized learning platform for Data Structures & Algorithms and Competitive Programming. It imports your real activity from **LeetCode** and **Codeforces**, derives per-topic mastery from your solve history, and deterministically recommends what to solve next — weak topics first, at the right difficulty, with spaced repetition for problems you've already solved.
 
 **The recommendation engine is pure backend logic with no AI.** It is deterministic: the same inputs always produce the same recommendations. AI is layered on top for hints and explanations only — it never decides what you should solve.
@@ -70,7 +72,7 @@ User's solve history (LeetCode + Codeforces)
 | **AI** | Groq (structured JSON output, configurable model) |
 | **External Data** | Codeforces API (official), LeetCode (alfa-leetcode-api community wrapper) |
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, `motion`, shadcn/ui |
-| **Deployment** | Vercel (frontend) + Railway (backend) — later stage |
+| **Deployment** | Vercel (frontend) + Render (backend) |
 
 ---
 
@@ -341,6 +343,23 @@ and a bypassable verification flow would be worse than an honest gap.
 - **AI prompt injection hardened** — engine reasons are server-derived, never from request body; rate limiting caps abuse
 
 ---
+
+## Roadmap — v2
+
+This is **v1** — the core loop (import → measure → recommend → review) is complete and deployed. Here's what's coming next:
+
+| Feature | Description |
+|---|---|
+| **Similar Problem Finder** | Paste any LeetCode/Codeforces problem URL and get similar problems at your desired difficulty range — powered by topic and structural similarity matching across the full catalog |
+| **Advanced AI Hints** | Multi-step, progressive hints that adapt to your mastery level — from high-level approach nudges to detailed breakdowns, without ever giving away the solution |
+| **Contest Mode** | Timed practice sets that simulate real contest conditions with problems calibrated to your current rating |
+| **Progress Analytics** | Visualize your mastery trajectory over time — weekly trends, topic breakthrough detection, and streak tracking |
+| **Community Problem Lists** | Curated problem sets shared by users, filterable by topic, difficulty, and target contest level |
+
+> Have a feature idea? [Open an issue](https://github.com/mahirdll29/dsa-cp-trainer/issues) — contributions welcome.
+
+---
+
 ## License
 
 This project is for learning and portfolio purposes.
