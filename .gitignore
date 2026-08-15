@@ -9,7 +9,15 @@ dist/
 # Local working docs and tooling — not part of the published project.
 docs/
 AGENTS.md
-.claude/
+# .claude/ is local tooling, EXCEPT the project design system, which is a real
+# deliverable. Note the pattern: you cannot re-include a file whose parent
+# directory is itself excluded, because git never descends into it. So each
+# level excludes its CONTENTS (`dir/*`) and then re-includes the one child we
+# want. `.claude/` with a trailing slash would make the negations below dead.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/trainer-design/
 CLAUDE.md
 CLAUDE.MD
 tmp-*.ts

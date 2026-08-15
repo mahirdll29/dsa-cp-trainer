@@ -69,7 +69,7 @@ User's solve history (LeetCode + Codeforces)
 | **Auth** | JWT + bcrypt + HTTP-only cookies |
 | **AI** | Groq (structured JSON output, configurable model) |
 | **External Data** | Codeforces API (official), LeetCode (alfa-leetcode-api community wrapper) |
-| **Frontend** | Next.js, TypeScript, Tailwind CSS, shadcn/ui — Module 7 |
+| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, `motion`, shadcn/ui |
 | **Deployment** | Vercel (frontend) + Railway (backend) — later stage |
 
 ---
@@ -84,7 +84,7 @@ User's solve history (LeetCode + Codeforces)
 | 4. Codeforces Integration | ✅ Done | Official API — global problem catalog, submissions, rating history |
 | 5. LeetCode Integration | ✅ Done | Community wrapper — problem catalog (with difficulty gap-fill), submissions, tag mapping |
 | 6. AI Layer | ✅ Done | Hints & explanations via Groq — per-user rate limiting, structured JSON, fail-soft |
-| 7. Frontend | 🔜 Next | Next.js dashboard |
+| 7. Frontend | ✅ Done | 5 pages over the existing API — no new endpoints, no schema changes |
 
 ---
 
@@ -184,9 +184,21 @@ npm run prisma:seed
 npm run sync:cf-problems    # Codeforces (~45s first run)
 npm run sync:lc-problems    # LeetCode (~2-3 min first run)
 
-# Start the dev server
+# Start the API
 npm run dev
 ```
+
+Then, in a second terminal, start the frontend:
+
+```bash
+cd ../frontend
+npm install
+npm run dev          # http://localhost:3000
+```
+
+> **The frontend must be served from exactly `http://localhost:3000`.** The API's
+> `requireSameOrigin` middleware compares the browser's `Origin` header against `FRONTEND_URL`
+> byte for byte and fails closed, so any other port makes every write return `403`.
 
 > **The catalog import is not optional.** The recommendation engine suggests problems you have
 > *not* solved, so it needs a pool of problems that exists independently of any user's history.

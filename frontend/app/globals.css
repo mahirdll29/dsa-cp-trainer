@@ -1,0 +1,258 @@
+@import "tailwindcss";
+@import "shadcn/tailwind.css";
+
+/* ==========================================================================
+   CALIBRATED ABSENCE — the single source of truth for this project's design.
+   Full philosophy: docs/calibrated-absence.md
+   Reusable spec:   .claude/skills/trainer-design/
+
+   THE GOVERNING LAW: colour is reserved for data semantics. Three hues, one
+   axis of meaning ("how hard is this for you"), and nothing else in the
+   interface is coloured at all — chrome, type, borders and buttons are
+   achromatic. A palette spent on mood is a palette unavailable for meaning.
+
+   HOW THE TWO REGISTERS WORK. Raw values live as plain custom properties on
+   :root and get overridden inside one prefers-color-scheme block. Tailwind
+   tokens below are declared with `@theme inline`, which makes every utility
+   compile to `var(--ink)` rather than to a baked-in hex — so the media query
+   below is the ONLY place dark mode is expressed. No `dark:` variant appears
+   anywhere in this codebase, and no component names a colour twice, which is
+   what stops the two registers drifting apart.
+   ========================================================================== */
+
+:root {
+  /* ---- LIGHT: the design of record ------------------------------------ */
+  --paper: #edeff2; /* cool graph-paper ground                          */
+  --surface: #f7f8fa; /* raised panels — a fill, never a shadow           */
+  --rule: #d2d8df; /* hairlines and table separators                   */
+  --ink: #14181d; /* near-black with a blue cast — all type           */
+  --quiet: #616b78; /* labels, eyebrows, AND the whole "no data" state  */
+
+  /* The three semantic hues. Each carries the SAME meaning in both of its
+     jobs, which is what lets one ramp serve two data dimensions:
+       deficit = weak topic  = HARD problem  = badly overdue = FAILED sync
+       surplus = strong topic = EASY problem = healthy       = COMPLETED   */
+  --deficit: #a63a2b;
+  --median: #7e6014;
+  --surplus: #1b6b63;
+
+  --radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ---- DARK: the same eight roles, inverted --------------------------
+       --paper and --ink swap exactly. The three hues are RE-TUNED rather
+       than reused: #a63a2b on a near-black ground measures 2.4:1 and is
+       unreadable, so each is lifted until it clears 4.5:1 against its own
+       background. Verified, not assumed — see the contrast table in
+       .claude/skills/trainer-design/SKILL.md.                            */
+    --paper: #14181d;
+    --surface: #1b2027;
+    --rule: #2c333c;
+    --ink: #e4e8ed;
+    --quiet: #8c97a3;
+
+    --deficit: #e0715f;
+    --median: #d6a93f;
+    --surplus: #4fb3a6;
+  }
+}
+
+@theme inline {
+  /* Our own tokens -> bg-paper, text-ink, border-rule, text-deficit, ... */
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-rule: var(--rule);
+  --color-ink: var(--ink);
+  --color-quiet: var(--quiet);
+  --color-deficit: var(--deficit);
+  --color-median: var(--median);
+  --color-surplus: var(--surplus);
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* ---- THE SHADCN BRIDGE ----------------------------------------------
+     shadcn/ui is a component substrate here, not a look. Its primitives are
+     written against a fixed vocabulary (--primary, --border, --ring, ...),
+     so rather than editing three vendored components — which would make
+     every future `shadcn add` produce something that no longer matches —
+     that vocabulary is REMAPPED onto the eight tokens above. The components
+     stay byte-identical to what the CLI generates and still come out in this
+     project's palette.
+
+     Note the deliberate flattening: --primary, --secondary and --accent all
+     resolve to ink or surface. shadcn ships them as three different brand
+     colours; under the colour law there is no such thing as a brand colour
+     here, so they collapse. --destructive is the ONE that keeps a hue,
+     because a destructive action genuinely is a data semantic.            */
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--paper);
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--quiet);
+  --color-accent: var(--surface);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--deficit);
+  --color-border: var(--rule);
+  --color-input: var(--rule);
+  --color-ring: var(--ink);
+
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+}
+
+@layer base {
+  /* ---- THE TYPE SCALE -------------------------------------------------
+     Three roles, two families. Display and body are the SAME variable face
+     separated only by its width axis — the typographic analogue of the
+     colour law: one system, varied only where the variation means
+     something. Data is a monospace because numerals here sit in columns
+     that must align by construction rather than by luck.                  */
+
+  html {
+    font-family: var(--font-sans);
+    /* Small by design. This is a reading instrument, not a landing page. */
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.5;
+    font-weight: 400;
+    font-stretch: 100%;
+  }
+
+  /* FOCUS IS VISIBLE, ALWAYS, AND IT IS NOT A COLOUR.
+     A ring drawn in an accent hue would be the one piece of decorative
+     colour in the app. Drawn in --ink with an offset in --paper it reads at
+     least as loudly, works identically in both registers, and spends no
+     part of the semantic palette. :focus-visible rather than :focus so a
+     mouse click does not draw it, but every keyboard tab does. */
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background-color: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Wide content (the queue's topic lists, long problem titles) must scroll
+     inside its own container. The page body never scrolls sideways. */
+  body {
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .t-display-lg {
+    font-family: var(--font-display);
+    font-size: 2.125rem; /* 34 */
+    line-height: 0.98;
+    font-weight: 700;
+    font-stretch: 125%;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+
+  .t-display {
+    font-family: var(--font-display);
+    font-size: 1.375rem; /* 22 */
+    line-height: 1.1;
+    font-weight: 600;
+    font-stretch: 125%;
+    letter-spacing: -0.01em;
+  }
+
+  /* The eyebrow labels every block in the app. Wide tracking at 11px is what
+     makes a small label read as a caption rather than as shrunken body. */
+  .t-eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.6875rem; /* 11 */
+    line-height: 1.2;
+    font-weight: 600;
+    font-stretch: 100%;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--quiet);
+  }
+
+  .t-body-sm {
+    font-size: 0.78125rem; /* 12.5 */
+    line-height: 1.45;
+  }
+
+  /* ---- DATA -----------------------------------------------------------
+     EVERY NUMERAL IN THIS APP GOES THROUGH ONE OF THESE THREE CLASSES.
+     tabular-nums is the functional half: proportional figures make a column
+     of scores jitter, and a jittering column cannot be scanned. `zero` is
+     IBM Plex Mono's slashed-zero feature, which matters at 11-13px when a
+     reader is separating 800 from 8OO. */
+  .t-data-lg,
+  .t-data,
+  .t-data-xs {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "zero" 1;
+  }
+
+  .t-data-lg {
+    font-size: 1.0625rem; /* 17 */
+    line-height: 1.2;
+    font-weight: 500;
+  }
+
+  .t-data {
+    font-size: 0.8125rem; /* 13 */
+    line-height: 1.3;
+    font-weight: 400;
+  }
+
+  .t-data-xs {
+    font-size: 0.6875rem; /* 11 */
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  /* Panels are separated by a FILL, never a shadow. Shadows imply depth and
+     lighting; a measuring instrument has neither. */
+  .panel {
+    background-color: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+  }
+}
+
+/* REDUCED MOTION, HANDLED ONCE.
+   Every animation in this project also declares its own reduced-motion
+   behaviour through lib/motion.ts, because a JS-driven layout animation is
+   not reachable from CSS. This block is the belt to that braces: it catches
+   anything either mechanism misses, including third-party CSS. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
