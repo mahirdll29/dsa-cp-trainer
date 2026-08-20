@@ -100,21 +100,27 @@ export function SyncPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
+  // Derived, and BOTH effects below key on this rather than on `busy`. A sync started in
+  // another tab answers 409 here, so sync()'s finally clears `busy` while the account is
+  // still SYNCING on the server - keying on `busy` stopped the poll and froze the counter
+  // while the panel still rendered "Importing...", and it never cleared without a reload.
+  const syncing = busy === "syncing" || status?.syncStatus === "SYNCING";
+
   // Ticks only while a sync is running, so nothing on this page moves when it is idle.
   // The counter is reset in sync() rather than here, because the reset belongs to the
   // event that starts the sync, not to the effect that observes it.
   useEffect(() => {
-    if (busy !== "syncing") return;
+    if (!syncing) return;
     const timer = setInterval(() => setElapsed((value) => value + 1), 1000);
     return () => clearInterval(timer);
-  }, [busy]);
+  }, [syncing]);
 
   // POST /sync is synchronous and tells us nothing until it finishes, so GET /status -
   // a cheap read of our own database - is what makes PENDING -> SYNCING -> COMPLETED
   // visible while the work happens. It also covers the case the POST cannot: if the
   // browser loses the response, the import is still running on the server.
   useEffect(() => {
-    if (busy !== "syncing") return;
+    if (!syncing) return;
     const poll = setInterval(() => {
       void readStatus()
         .then((next) => next && setStatus(next))
@@ -124,7 +130,7 @@ export function SyncPanel({
     }, 2000);
     return () => clearInterval(poll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, provider]);
+  }, [syncing, provider]);
 
   async function link() {
     setBusy("linking");
@@ -187,7 +193,6 @@ export function SyncPanel({
     }
   }
 
-  const syncing = busy === "syncing" || status?.syncStatus === "SYNCING";
 
   return (
     <section className="panel p-5" aria-labelledby={`${provider}-heading`}>
@@ -285,7 +290,7 @@ export function SyncPanel({
             <Button
               type="button"
               onClick={() => void sync()}
-              disabled={busy !== null}
+              disabled={busy !== null || syncing}
               className="h-9 rounded-[2px]"
             >
               {syncing ? "Syncing…" : status.syncStatus === "FAILED" ? "Try again" : "Sync now"}
@@ -294,7 +299,7 @@ export function SyncPanel({
               type="button"
               variant="outline"
               onClick={() => void unlink()}
-              disabled={busy !== null}
+              disabled={busy !== null || syncing}
               className="border-quiet/70 h-9 rounded-[2px]"
             >
               {busy === "unlinking" ? "Unlinking…" : "Unlink"}
