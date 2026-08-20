@@ -1,49 +1,21 @@
-// ---------------------------------------------------------------------------
-// THE ONLY FILE IN THIS PROJECT THAT TALKS TO codeforces.com.
-//
-// That is CLAUDE.md's external-API rule, and the reason for it is blunt: when a
-// provider changes a field name, renames a tag or starts rate-limiting harder,
-// the blast radius has to be one file you can open and read top to bottom.
-// Nothing below this line leaks a URL, a header or a response shape into the
-// rest of the codebase — callers get plain typed objects or a typed error.
-//
-// Codeforces has an OFFICIAL, DOCUMENTED public API (https://codeforces.com/api/),
-// which is why this module comes before LeetCode. We still treat every byte it
-// returns as untrusted input. "Documented" describes intent, not a guarantee:
-// the docs can be stale, a field can be added or dropped without notice, and a
-// proxy or captive portal can hand us HTML where we expected JSON. The cost of
-// checking is a few lines; the cost of not checking is a malformed row in the
-// database that the recommendation engine later trips over.
-// ---------------------------------------------------------------------------
+// The only file in this project that talks to codeforces.com. Every response is
+// treated as untrusted input: "documented" describes intent, not a guarantee.
 
 const CODEFORCES_API = "https://codeforces.com/api";
 
-// Observed worst case across the accounts profiled while planning this module:
-// 2.7 s for tourist's full 5,467-submission history (3.1 MB). 30 s is therefore
-// a HANG DETECTOR, not a tuning knob — if we are anywhere near it, something is
-// wrong upstream and we want to fail rather than hold a request open.
+// Observed worst case is 2.7 s (tourist's full history), so this is a hang detector
+// rather than a tuning knob.
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// Codeforces documents roughly one request per two seconds. 2.1 s buys a little
-// headroom against clock jitter without meaningfully slowing a sync (which
-// makes two calls).
+// Codeforces documents roughly one request per two seconds; 2.1 s buys headroom.
 const MIN_REQUEST_INTERVAL_MS = 2_100;
 
-// ONE bounded retry. Anything more elaborate — exponential backoff over many
-// attempts, a dead-letter queue, scheduled resumption — is a job queue, which
-// is an explicit v1 non-goal. One retry covers the common transient case (a
-// single 403 from bunching, a blip 502) and stops there.
+// One bounded retry. Anything more elaborate is a job queue, an explicit v1 non-goal.
 const MAX_RETRIES = 1;
 const RETRY_BACKOFF_MS = 5_000;
 
-// ---------------------------------------------------------------------------
-// ERRORS — a typed `kind`, so callers never string-match on a message.
-//
-// The route layer has to turn a failure into an HTTP status. If it did that by
-// inspecting error text ("does the message contain 'not found'?") then any
-// upstream rewording silently converts a 404 into a 500. The `kind` is our own
-// vocabulary and cannot drift underneath us.
-// ---------------------------------------------------------------------------
+// A typed `kind`, so the route layer never string-matches on a message. Rewording
+// upstream would otherwise silently turn a 404 into a 500.
 
 export type CodeforcesErrorKind =
   | "NOT_FOUND" // the handle does not exist -> the route returns 404
@@ -62,20 +34,9 @@ export class CodeforcesError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// SHAPES WE READ.
-//
-// These describe only the fields this project actually uses. Codeforces returns
-// far more (points, memory consumed, author details, avatars); modelling all of
-// it would be work with no consumer, and every extra field is another thing to
-// validate and another thing that can change.
-//
-// Optionality here is not defensiveness — each `?` is a case observed in real
-// responses while planning:
-//   - contestId is ABSENT on ACMSGURU problems, which carry problemsetName instead
-//   - rating is ABSENT on unrated problems (305 of 11,356 in the problemset)
-//   - verdict is ABSENT while a submission is still being judged
-// ---------------------------------------------------------------------------
+// Only the fields this project actually reads. Each `?` is a case observed live:
+// contestId absent on ACMSGURU, rating absent on unrated problems, verdict absent
+// while a submission is still being judged.
 
 export type CfProblem = {
   contestId?: number;
@@ -105,28 +66,15 @@ export type CfUserInfo = {
   handle: string;
 };
 
-// A list result carries the count of elements we threw away for failing
-// validation. The caller reports it rather than us swallowing it silently — a
-// sync that quietly discarded 400 rows should not look identical to a clean one.
+// The count of elements dropped for failing validation, reported rather than
+// swallowed: a sync that discarded 400 rows must not look identical to a clean one.
 export type CfListResult<T> = {
   items: T[];
   malformed: number;
 };
 
-// ---------------------------------------------------------------------------
-// THE RATE-LIMIT GATE.
-//
-// Every outbound request goes through one promise chain, so requests are
-// SERIALIZED and spaced regardless of who calls what. Putting the delay here
-// rather than at the call sites is the point: a caller cannot forget to space,
-// and adding a fifth endpoint later inherits the spacing for free.
-//
-// THE COST, STATED: this gate is per-process. Two Node instances each keep
-// their own and could collectively exceed the documented limit. That is correct
-// for the single Railway dyno we deploy and would need rethinking behind a load
-// balancer — at which point the honest answer is a shared limiter, not a bigger
-// delay here.
-// ---------------------------------------------------------------------------
+// One promise chain serialises every outbound request, so a caller cannot forget to
+// space. Per-process: two instances would each keep their own gate.
 
 let requestQueue: Promise<unknown> = Promise.resolve();
 let lastRequestStartedAt = 0;
@@ -143,20 +91,13 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
     return task();
   });
 
-  // THE `.catch` IS LOAD-BEARING, and its absence is a genuinely nasty bug: if
-  // the queue tail were the rejecting promise itself, every request scheduled
-  // after a single failure would reject too, and one bad handle would take down
-  // syncing for everybody until the process restarted. We chain on a neutered
-  // copy so failures do not propagate down the queue — the real rejection still
-  // reaches the caller through `result`.
+  // Without this .catch the queue tail would be the rejecting promise itself, and one
+  // bad handle would reject every request scheduled after it until the process
+  // restarted. The real rejection still reaches the caller through `result`.
   requestQueue = result.catch(() => undefined);
 
   return result;
 }
-
-// ---------------------------------------------------------------------------
-// ONE HTTP CALL, with the timeout and the envelope check.
-// ---------------------------------------------------------------------------
 
 type Envelope = {
   status?: unknown;
@@ -171,10 +112,8 @@ async function callOnce(
   const query = new URLSearchParams(params).toString();
   const url = `${CODEFORCES_API}/${method}?${query}`;
 
-  // AbortController is the ONLY way to bound fetch: fetch has no timeout option
-  // and will otherwise wait as long as the socket stays open. Without this a
-  // hung upstream holds our HTTP request open until the client gives up, and
-  // during a sync it would hold the SYNCING lock too.
+  // AbortController is the only way to bound fetch; without it a hung upstream holds
+  // our request open and, during a sync, holds the SYNCING lock with it.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -182,8 +121,7 @@ async function callOnce(
   try {
     response = await fetch(url, { signal: controller.signal });
   } catch (error) {
-    // An aborted fetch rejects, so "did we time out?" is answered by the
-    // signal, not by the error.
+    // Answered by the signal, not by the error message.
     if (controller.signal.aborted) {
       throw new CodeforcesError(
         "TIMEOUT",
@@ -195,20 +133,14 @@ async function callOnce(
       `Codeforces ${method} could not be reached: ${(error as Error).message}`
     );
   } finally {
-    // Always clear it. A pending timer keeps the event loop alive, so leaking
-    // one per request makes the process hang on shutdown for up to 30 s.
+    // A leaked timer keeps the event loop alive and hangs shutdown for up to 30 s.
     clearTimeout(timer);
   }
 
-  // THE TRAP, VERIFIED AGAINST THE LIVE API: an unknown handle comes back as
-  // HTTP 400 with a perfectly good JSON body:
-  //
+  // An unknown handle comes back as HTTP 400 with a perfectly good JSON body:
   //   {"status":"FAILED","comment":"handles: User with handle xyz not found"}
-  //
-  // The obvious `if (!response.ok) throw` would discard that body and report a
-  // generic upstream failure — turning what should be a 404 into a 502. So we
-  // parse the body FIRST and only fall back to the status code when the body
-  // tells us nothing.
+  // So the body is parsed FIRST. `if (!response.ok) throw` would discard that reason
+  // and turn what should be a 404 into a 502.
   let body: Envelope | null = null;
   try {
     body = (await response.json()) as Envelope;
@@ -220,9 +152,8 @@ async function callOnce(
     const comment =
       typeof body.comment === "string" ? body.comment : "no reason given";
 
-    // Codeforces reports "handle not found" and "rate limit exceeded" through
-    // the same FAILED envelope, so the comment is the only thing separating a
-    // client mistake from a throttle.
+    // "not found" and "rate limit" arrive through the same FAILED envelope, so the
+    // comment is the only thing separating a client mistake from a throttle.
     if (comment.includes("not found")) {
       throw new CodeforcesError("NOT_FOUND", comment);
     }
@@ -251,11 +182,9 @@ async function callOnce(
   return body.result;
 }
 
-// The retry wrapper. Only RATE_LIMITED, TIMEOUT and UNAVAILABLE are worth
-// retrying: they are conditions that might differ a moment later. NOT_FOUND and
-// MALFORMED are deterministic — the handle will still not exist in five
-// seconds, and the shape will still be wrong — so retrying them just doubles
-// the latency of a guaranteed failure.
+// Only conditions that might differ a moment later are retried. NOT_FOUND and
+// MALFORMED are deterministic, so retrying them just doubles the latency of a
+// guaranteed failure.
 const RETRYABLE: ReadonlySet<CodeforcesErrorKind> = new Set([
   "RATE_LIMITED",
   "TIMEOUT",
@@ -289,18 +218,9 @@ async function call(
   throw lastError;
 }
 
-// ---------------------------------------------------------------------------
-// VALIDATION — hand-written, no Zod (CLAUDE.md).
-//
-// The rule applied throughout: check every field we ACTUALLY READ, and check
-// nothing else. Validating fields we ignore is busywork that breaks the import
-// when Codeforces changes something irrelevant to us.
-//
-// A malformed ELEMENT is skipped and counted, never written. A malformed
-// TOP-LEVEL shape (result is not an array) throws, because that means we have
-// misunderstood the endpoint entirely and importing a partial result would be
-// worse than failing.
-// ---------------------------------------------------------------------------
+// Hand-written validation, no Zod. Check every field we actually read and nothing
+// else. A malformed ELEMENT is skipped and counted; a malformed TOP-LEVEL shape
+// throws, because a partial import is worse than a failure.
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -319,10 +239,8 @@ function requireArray(value: unknown, method: string): unknown[] {
   return value;
 }
 
-// Shared by problemset.problems and the `problem` embedded in every submission,
-// which is deliberate: it is the same object in the Codeforces data model, so
-// one validator means the two import paths can never disagree about what a
-// valid problem is.
+// Shared by problemset.problems and the `problem` embedded in each submission - the
+// same object in the Codeforces model, so one validator keeps both paths agreeing.
 function parseProblem(raw: unknown): CfProblem | null {
   const record = asRecord(raw);
   if (!record) return null;
@@ -338,9 +256,8 @@ function parseProblem(raw: unknown): CfProblem | null {
     return null;
   }
 
-  // Tags may be absent entirely (180 problems in the live problemset have no
-  // tags). That is a problem with no topics, not a broken problem — it still
-  // gets imported, it just contributes to no topic's mastery.
+  // Tags may be absent (180 live problems have none). That is a problem with no topics,
+  // not a broken problem: it is still imported.
   let tags: string[] = [];
   if (record.tags !== undefined) {
     if (!Array.isArray(record.tags)) return null;
@@ -360,17 +277,9 @@ function parseProblem(raw: unknown): CfProblem | null {
   };
 }
 
-// ---------------------------------------------------------------------------
-// THE FOUR CALLS
-// ---------------------------------------------------------------------------
-
-// Used by POST /link to prove a handle exists before we create anything. One
-// cheap call: a typo fails here instead of after a full import attempt.
-//
-// Returns the CANONICAL handle from the response rather than echoing the
-// caller's input. Codeforces looks handles up case-insensitively, so a user
-// typing "MAHIRDLL" would otherwise be stored differently from "mahirdll" and
-// the two would look like different accounts in our own data.
+// Proves a handle exists before we create anything, and returns the API's CANONICAL
+// casing: Codeforces matches case-insensitively, so storing "MAHIRDLL" for the
+// account "mahirdll" would leave our data disagreeing with every link we render.
 export async function getUserInfo(handle: string): Promise<CfUserInfo> {
   const result = await call("user.info", { handles: handle });
   const list = requireArray(result, "user.info");
@@ -386,18 +295,10 @@ export async function getUserInfo(handle: string): Promise<CfUserInfo> {
   return { handle: first.handle };
 }
 
-// The whole submission history in ONE call.
-//
-// `from`/`count` exist, and the brief anticipated needing them. Measured
-// instead: tourist's entire 5,467-submission history came back in a single
-// 2.7 s / 3.1 MB response with neither parameter set. Pagination would have
-// bought nothing and cost 2.1 s of rate-limit spacing per extra page plus
-// partial-page edge cases.
-//
-// THE CONSEQUENCE IS A FEATURE: because we always re-read everything, every
-// sync is a FULL re-sync. The rejudge blind spot that an incremental,
-// newest-first, stop-at-lastSyncedAt design would have — where a rejudged old
-// verdict is never revisited — simply does not exist here.
+// The whole submission history in ONE call - measured, tourist's 5,467 submissions
+// came back in a single 2.7 s response. Because we always re-read everything, every
+// sync is a full re-sync, so the rejudge blind spot an incremental design would have
+// does not exist. lastSyncedAt is a freshness display value, NOT a cursor.
 export async function getUserSubmissions(
   handle: string
 ): Promise<CfListResult<CfSubmission>> {
@@ -420,8 +321,7 @@ export async function getUserSubmissions(
       continue;
     }
 
-    // Absent while a submission is still queued. It counts as an attempt but
-    // can never count as a solve, which parseVerdict downstream relies on.
+    // Absent while still queued: counts as an attempt, never as a solve.
     if (record.verdict !== undefined && typeof record.verdict !== "string") {
       malformed++;
       continue;
@@ -437,9 +337,8 @@ export async function getUserSubmissions(
   return { items, malformed };
 }
 
-// Contest history. Field names verified against a live response rather than
-// taken from the docs — note `ratingUpdateTimeSeconds`, which is easy to guess
-// wrong as `ratedAt` or `updateTimeSeconds`.
+// Field names verified against a live response - note ratingUpdateTimeSeconds, easy
+// to guess wrong as ratedAt.
 export async function getUserRatingChanges(
   handle: string
 ): Promise<CfListResult<CfRatingChange>> {
@@ -482,13 +381,9 @@ export async function getUserRatingChanges(
   return { items, malformed };
 }
 
-// THE CANDIDATE POOL. Global reference data, identical for every user and tied
-// to no LinkedAccount — see sync.ts for why that distinction is load-bearing.
-//
-// Deliberately called with NO problemsetName parameter. Passing
-// `problemsetName=acmsguru` returns a separate 453-problem archive whose
-// entries have no contestId at all; the default call returns none of them, and
-// all 453 are unrated so §2.6's drop rule would discard them anyway.
+// The candidate pool: global reference data tied to no user. Deliberately called
+// with NO problemsetName parameter - passing acmsguru returns a separate archive
+// whose entries have no contestId at all.
 export async function getProblemsetProblems(): Promise<
   CfListResult<CfProblem>
 > {
@@ -502,9 +397,8 @@ export async function getProblemsetProblems(): Promise<
     );
   }
 
-  // Note the shape difference from the other three endpoints: this one returns
-  // an OBJECT containing `problems` and `problemStatistics`, not a bare array.
-  // We ignore the statistics (solve counts) — no feature in scope uses them.
+  // Note the shape difference from the other three calls: an object containing
+  // `problems`, not a bare array. Statistics are ignored - nothing in scope uses them.
   const list = requireArray(record.problems, "problemset.problems");
 
   const items: CfProblem[] = [];
