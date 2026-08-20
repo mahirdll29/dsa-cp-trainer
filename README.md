@@ -75,19 +75,6 @@ User's solve history (LeetCode + Codeforces)
 
 ---
 
-## Project Status
-
-| Module | Status | Description |
-|---|---|---|
-| 1. Schema | ✅ Done | 9 models, 4 enums, migrated to Neon, 32 topics seeded |
-| 2. Auth | ✅ Done | Register/login/logout/me + requireAuth middleware |
-| 3. Recommendation Engine | ✅ Done | Mastery formula, spaced repetition, 4-stage pipeline |
-| 4. Codeforces Integration | ✅ Done | Official API — global problem catalog, submissions, rating history |
-| 5. LeetCode Integration | ✅ Done | Community wrapper — problem catalog (with difficulty gap-fill), submissions, tag mapping |
-| 6. AI Layer | ✅ Done | Hints & explanations via Groq — per-user rate limiting, structured JSON, fail-soft |
-| 7. Frontend | ✅ Done | 5 pages over the existing API — no new endpoints, no schema changes |
-
----
 
 ## Data Model
 
