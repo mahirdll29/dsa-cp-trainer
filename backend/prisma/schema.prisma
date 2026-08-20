@@ -54,11 +54,12 @@ model User {
   name      String
   createdAt DateTime @default(now())
 
-  // All four are the user's OWN data, so all four cascade on delete.
+  // All five are the user's OWN data, so all five cascade on delete.
   linkedAccounts LinkedAccount[]
   userProblems   UserProblem[]
   topicMasteries TopicMastery[]
   revisionItems  RevisionItem[]
+  masteryLogs    MasteryLog[]
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,7 @@ model Topic {
 
   problemTopics  ProblemTopic[]
   topicMasteries TopicMastery[]
+  masteryLogs    MasteryLog[]
 }
 
 // ---------------------------------------------------------------------------
@@ -329,4 +331,38 @@ model RevisionItem {
   @@index([userId, dueAt])
   // The Restrict check on problem delete.
   @@index([problemId])
+}
+
+// ---------------------------------------------------------------------------
+// MasteryLog — append-only history of TopicMastery values.
+//
+// TopicMastery holds only the CURRENT value and the recompute overwrites it, so
+// trajectory is destroyed on every sync and cannot be reconstructed afterwards.
+// This table exists so Module 11 has something to read; it has no readers yet.
+//
+// Raw inputs only, never a derived WEAK/STRONG label: re-tuning a threshold
+// would silently invalidate every historical row. Store the inputs, derive on
+// read, forever. See architecture.md 10.
+// ---------------------------------------------------------------------------
+
+model MasteryLog {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the user's own progress history.
+
+  topicId String
+  topic   Topic  @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  // Restrict: deleting a canonical topic would erase trajectory nothing can rebuild.
+
+  solvedCount    Int
+  attemptedCount Int
+  masteryScore   Float
+  capturedAt     DateTime @default(now())
+
+  // The only query Module 11 will run: one user's one topic over time.
+  @@index([userId, topicId, capturedAt])
+  // The Restrict check on topic delete - the composite above starts with userId.
+  @@index([topicId])
 }
