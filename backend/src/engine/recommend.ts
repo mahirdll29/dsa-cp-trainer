@@ -100,47 +100,40 @@ async function candidateProblemsForTopic(
   });
 }
 
+// One indexed query per topic, rather than one 200-row pool bucketed by topic.
+//
+// The pool version looked cheaper and was quietly wrong. Problem.id is a cuid(), which
+// is roughly insertion-ordered, so `orderBy: { id: "asc" }, take: 200` is not a sample
+// of the catalog - it is a contiguous slice of whatever was imported first. Measured
+// against the live database: all 200 rows were CODEFORCES, covering 16 of 32 topics. A
+// new user still got a full 12 recommendations, so nothing looked broken, but the 11
+// topics only LeetCode covers could never appear - Arrays among them.
+//
+// Cost: one round trip per topic until the cap, measured ~3.3 s for 12. Every topic has
+// EASY coverage, so the walk stops at MAX_RECOMMENDATIONS rather than scanning all 32.
+// This runs once in a user's lifetime.
 async function coldStartRecommendations(
+  userId: string,
   topics: UnknownTopicView[]
 ): Promise<Recommendation[]> {
-  // One query for the pool, with `take` as a sanity bound rather than a tuned limit.
-  const pool = await prisma.problem.findMany({
-    where: { difficultyBand: EXPLORATORY_BAND },
-    select: {
-      id: true,
-      title: true,
-      url: true,
-      provider: true,
-      difficultyRaw: true,
-      difficultyBand: true,
-      problemTopics: {
-        select: { topicId: true, topic: { select: { name: true } } },
-      },
-    },
-    orderBy: { id: "asc" },
-    take: 200,
-  });
-
-  const byTopicId = new Map<string, ProblemWithTopics[]>();
-  for (const problem of pool) {
-    for (const link of problem.problemTopics) {
-      const bucket = byTopicId.get(link.topicId) ?? [];
-      bucket.push(problem);
-      byTopicId.set(link.topicId, bucket);
-    }
-  }
-
   const recommendations: Recommendation[] = [];
   const used = new Set<string>();
 
-  // `topics` arrives ordered by name and each bucket preserves the query's id order, so
-  // this walk is fully deterministic.
+  // `topics` arrives ordered by name and each query orders by id, so this is deterministic.
   for (const topic of topics) {
     if (recommendations.length >= MAX_RECOMMENDATIONS) break;
 
-    const candidate = (byTopicId.get(topic.topicId) ?? []).find(
-      (problem) => !used.has(problem.id)
+    // A small over-fetch: an earlier topic may already have taken a problem that carries
+    // this topic too. Three is plenty - all three would have to be claimed already, and
+    // the cost of that is one fewer recommendation, not a wrong one.
+    const candidates = await candidateProblemsForTopic(
+      userId,
+      topic.topicId,
+      EXPLORATORY_BAND,
+      3
     );
+
+    const candidate = candidates.find((problem) => !used.has(problem.id));
     if (!candidate) continue;
 
     used.add(candidate.id);
@@ -163,7 +156,7 @@ export async function buildRecommendations(
   // Mastery rows are derived and may be stale or not yet recomputed.
   const historyCount = await prisma.userProblem.count({ where: { userId } });
   if (historyCount === 0) {
-    return coldStartRecommendations(overview.unknown);
+    return coldStartRecommendations(userId, overview.unknown);
   }
 
   const recommendations: Recommendation[] = [];
