@@ -40,9 +40,25 @@ Two or three sentences. No lists, no headings, no markdown.
 Reply with JSON only, in exactly this shape:
   {"hint": "<your two or three sentences>"}`;
 
+// Problem.title is provider data, and Codeforces GYM CONTESTS ARE USER-CREATABLE - gym
+// problems reach our database through the user-sync path specifically. So the title is the
+// one field in this prompt an outsider can influence. Collapsing it to a single line and
+// bounding its length means it cannot open what looks like a new instruction block.
+//
+// The engine `reason` is server-derived and is the defence that matters; this closes the
+// remaining gap rather than replacing it.
+const MAX_TITLE_CHARS = 120;
+
+function sanitizeTitle(title: string): string {
+  const oneLine = title.replace(/\s+/g, " ").trim();
+  return oneLine.length > MAX_TITLE_CHARS
+    ? `${oneLine.slice(0, MAX_TITLE_CHARS)}...`
+    : oneLine;
+}
+
 function describeProblem(problem: PromptProblem): string {
   return [
-    `Problem title: ${problem.title}`,
+    `Problem title: ${sanitizeTitle(problem.title)}`,
     `Provider: ${problem.provider}`,
     // Both difficulty columns: difficultyRaw is what a user recognises ("1600"),
     // difficultyBand is the only one comparable across providers.
