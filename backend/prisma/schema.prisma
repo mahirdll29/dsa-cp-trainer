@@ -39,6 +39,12 @@ enum SolveStatus {
   ATTEMPTED
 }
 
+enum SessionStatus {
+  ACTIVE
+  SOLVED
+  ABANDONED
+}
+
 // ---------------------------------------------------------------------------
 // User
 //
@@ -54,12 +60,13 @@ model User {
   name      String
   createdAt DateTime @default(now())
 
-  // All five are the user's OWN data, so all five cascade on delete.
-  linkedAccounts LinkedAccount[]
-  userProblems   UserProblem[]
-  topicMasteries TopicMastery[]
-  revisionItems  RevisionItem[]
-  masteryLogs    MasteryLog[]
+  // All six are the user's OWN data, so all six cascade on delete.
+  linkedAccounts   LinkedAccount[]
+  userProblems     UserProblem[]
+  topicMasteries   TopicMastery[]
+  revisionItems    RevisionItem[]
+  masteryLogs      MasteryLog[]
+  practiceSessions PracticeSession[]
 }
 
 // ---------------------------------------------------------------------------
@@ -147,9 +154,10 @@ model Problem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  problemTopics ProblemTopic[]
-  userProblems  UserProblem[]
-  revisionItems RevisionItem[]
+  problemTopics    ProblemTopic[]
+  userProblems     UserProblem[]
+  revisionItems    RevisionItem[]
+  practiceSessions PracticeSession[]
 
   // The same problem must never be imported twice. Scoped by provider because
   // the two providers' id spaces are unrelated and could collide by coincidence.
@@ -365,4 +373,69 @@ model MasteryLog {
   @@index([userId, topicId, capturedAt])
   // The Restrict check on topic delete - the composite above starts with userId.
   @@index([topicId])
+}
+
+// ---------------------------------------------------------------------------
+// PracticeSession - one timed attempt at one problem.
+//
+// The feature this table exists for is the HINT GATE, and the gate is nothing
+// but arithmetic on startedAt and the hints below. Storing the timestamps is
+// what makes the schedule enforceable on the server instead of negotiable in a
+// prompt. See architecture.md 11.
+//
+// No hintsUsed column: the count is hints.length. A counter stored beside the
+// rows it counts is the drift this schema derives values to avoid.
+// ---------------------------------------------------------------------------
+
+model PracticeSession {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the user's own practice history.
+
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Restrict)
+  // Restrict: a session is evidence of work the user did, not the problem's to erase.
+
+  startedAt  DateTime      @default(now())
+  resolvedAt DateTime?
+  status     SessionStatus @default(ACTIVE)
+
+  hints SessionHint[]
+
+  // The active-session lookup, which runs on every practice page load.
+  @@index([userId, status])
+  // History, newest first. KEPT alongside the index above, which cannot serve
+  // ORDER BY startedAt and so cannot stop after the first page of rows.
+  @@index([userId, startedAt])
+  // The Restrict check on problem delete.
+  @@index([problemId])
+}
+
+// ---------------------------------------------------------------------------
+// SessionHint - one issued hint, stored permanently.
+//
+// Stored rather than regenerated because a hint the user has already read is
+// part of the record of the session, and because levels 2 and 3 are generated
+// with the earlier levels in the prompt so they build instead of repeating.
+// ---------------------------------------------------------------------------
+
+model SessionHint {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Cascade: a hint has no meaning outside the session that earned it.
+
+  level    Int
+  content  String
+  issuedAt DateTime @default(now())
+
+  // ONE HINT PER LEVEL PER SESSION. Two requests racing the first hint both
+  // compute level 1; this constraint is the only thing that stops both writing.
+  //
+  // No separate @@index([sessionId]) - this unique serves both the hint lookup
+  // and the cascade check through its leftmost prefix.
+  @@unique([sessionId, level])
 }
