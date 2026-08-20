@@ -5,9 +5,6 @@ import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
-// ---------------------------------------------------------------------------
-// GET /api/revision/due — only what is actually due now
-// ---------------------------------------------------------------------------
 router.get(
   "/due",
   requireAuth,
@@ -16,19 +13,14 @@ router.get(
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    // "Due" means dueAt <= now. Items scheduled for the future are absent, not
-    // included-and-flagged: the point of a revision planner is that it tells
-    // you what to do today, and a list that shows everything is a list you stop
-    // reading.
+    // "Due" means dueAt <= now. Future items are absent rather than shown-and-greyed: a
+    // list that shows everything is a list people stop reading.
     const items = await getDueRevisions(req.userId);
 
     return res.json({ items });
   })
 );
 
-// ---------------------------------------------------------------------------
-// POST /api/revision/:problemId/review — mark reviewed, advance the interval
-// ---------------------------------------------------------------------------
 router.post(
   "/:problemId/review",
   requireAuth,
@@ -39,20 +31,16 @@ router.post(
 
     const { problemId } = req.params;
 
-    // Hand-written validation, consistent with the auth routes. Express always
-    // gives a string here, but an empty segment is worth rejecting explicitly
-    // rather than sending "" to Prisma and getting a 404 by accident.
+    // An empty segment is rejected explicitly rather than sent to Prisma to 404 by accident.
     if (typeof problemId !== "string" || problemId.trim() === "") {
       return res.status(400).json({ error: "Problem id is required" });
     }
 
-    // THE ONLY ROUTE IN THIS MODULE TAKING A PATH PARAMETER, and therefore the
-    // only place an ownership bug could hide. There is no ownership branch
-    // below, and that is not an oversight: the engine looks the item up by the
-    // compound { userId, problemId } unique, so another user's item does not
-    // match and comes back null. The 404 below is that case as well as the
-    // genuinely-missing case — deliberately indistinguishable, so this cannot
-    // be used to probe which problems another user is revising.
+    // The only route here taking a path parameter, and therefore the only place an
+    // ownership bug could hide. There is no ownership branch because the engine looks the
+    // item up on the compound { userId, problemId } unique - another user's item does not
+    // match. The 404 covers both "not yours" and "does not exist", deliberately
+    // indistinguishable, so it cannot be used to probe what others are revising.
     const item = await reviewRevisionItem(req.userId, problemId);
 
     if (!item) {
