@@ -81,12 +81,14 @@ User's solve history (LeetCode + Codeforces)
 User ─┬─→ LinkedAccount ──→ RatingChange
       ├─→ UserProblem
       ├─→ TopicMastery
-      └─→ RevisionItem
+      ├─→ RevisionItem
+      ├─→ MasteryLog
+      └─→ PracticeSession ─→ SessionHint
 
 Problem ─→ ProblemTopic ←─ Topic
 ```
 
-- **9 tables**, 4 enums, `cuid()` IDs everywhere
+- **12 tables**, 5 enums, `cuid()` IDs everywhere
 - **Two difficulty columns**: `difficultyRaw` (provider's value verbatim) + `difficultyBand` (normalized EASY/MEDIUM/HARD for the engine)
 - **`TopicMastery` is stored, not computed** — denormalized for fast reads, recomputed after every import
 - **`onDelete` decided per relation** — Cascade for user-owned data, Restrict for shared reference data (Problem, Topic)
@@ -133,6 +135,17 @@ Problem ─→ ProblemTopic ←─ Topic
 |---|---|---|---|
 | `POST` | `/api/ai/explain` | required | Explain *why* a problem was recommended (engine reason → natural language) |
 | `POST` | `/api/ai/hint` | required | Topic-level hint for a problem (approach nudge, not a solution) |
+
+### Practice Sessions (`/api/sessions`)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/sessions` | required | Start a session on a problem (`409` if one is already active on a different problem) |
+| `GET` | `/api/sessions/active` | required | The active session with its issued hints, or `null` |
+| `POST` | `/api/sessions/:id/hint` | required | Request the next hint. Always `200`: either the hint, or a countdown |
+| `POST` | `/api/sessions/:id/resolve` | required | End a session as `SOLVED` or `ABANDONED` |
+| `GET` | `/api/sessions/history` | required | Resolved sessions, newest first, capped at 50 |
+
+> **Hint release is decided by timestamp arithmetic, never by a model.** Ten minutes from session start to hint 1, ten more to hint 2, fifteen more to hint 3 — each measured from the previous hint rather than from the start. Asking early returns a normal `200` carrying a countdown, not an error.
 
 > **AI endpoints are rate-limited** — 6 requests per user per rolling minute, protecting the shared Groq token budget. Returns `429` with a truthful `Retry-After` header when exceeded.
 
@@ -341,7 +354,6 @@ This is **v1** — the core loop (import → measure → recommend → review) i
 | Feature | Description |
 |---|---|
 | **Similar Problem Finder** | Paste any LeetCode/Codeforces problem URL and get similar problems at your desired difficulty range — powered by topic and structural similarity matching across the full catalog |
-| **Advanced AI Hints** | Multi-step, progressive hints that adapt to your mastery level — from high-level approach nudges to detailed breakdowns, without ever giving away the solution |
 | **Contest Mode** | Timed practice sets that simulate real contest conditions with problems calibrated to your current rating |
 | **Progress Analytics** | Visualize your mastery trajectory over time — weekly trends, topic breakthrough detection, and streak tracking |
 | **Community Problem Lists** | Curated problem sets shared by users, filterable by topic, difficulty, and target contest level |
