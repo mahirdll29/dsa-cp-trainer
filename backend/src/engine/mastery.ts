@@ -177,7 +177,12 @@ async function appendMasteryLog(
   try {
     await prisma.masteryLog.createMany({ data: rows });
   } catch (error) {
-    console.error("[masteryLog] append failed, recompute continuing:", error);
+    // userId and the row count are the whole actionable payload: without them the line
+    // says something was lost without saying whose or how much.
+    console.error(
+      `[masteryLog] append failed for user ${rows[0].userId}, ${rows.length} row(s) dropped, recompute continuing:`,
+      error
+    );
   }
 }
 
