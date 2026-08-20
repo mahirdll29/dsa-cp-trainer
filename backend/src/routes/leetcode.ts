@@ -217,6 +217,14 @@ router.delete(
       return res.status(404).json({ error: "No LeetCode account is linked" });
     }
 
+    // Take the same lock the sync takes. Unlinking deletes the UserProblem rows a
+    // running import is still writing and then recomputes mastery from the result, so
+    // without this the two interleave: rows survive the purge, or the importer's own
+    // completeSync/failSync hits a LinkedAccount row that no longer exists.
+    if (!(await acquireSyncLock(account.id))) {
+      return res.status(409).json({ error: "A sync is already in progress" });
+    }
+
     const result = await unlinkLeetcodeAccount(req.userId, account.id);
 
     return res.json({ unlinked: true, ...result });
