@@ -10,6 +10,6 @@ dist/
 docs/
 AGENTS.md
 .claude/
-CLAUDE.md
-CLAUDE.MD
+# Root CLAUDE.md IS tracked. This one is only a pointer to the gitignored AGENTS.md.
+frontend/CLAUDE.md
 tmp-*.ts
