@@ -275,9 +275,9 @@ picking problems directly would undo the thing that makes this project worth hav
 
 ## Repo hygiene
 
-- Work happens on a branch, merged via PR. Do not commit directly to `main` while a branch is open
-  against it — that is how the v1 hardening merge picked up a pointless `README.md` conflict.
-- Merge with a merge commit. The commit structure is deliberate; squashing discards it.
+- Commit directly to `main`. Do not create branches or open pull requests unless I explicitly
+  ask for one. A branch is for a large, risky, multi-commit pass (like the v1 hardening) — not
+  for routine module work.
 - Style changes and behavior changes never share a commit.
-- The frontend design system lives in `.claude/skills/trainer-design/SKILL.md`, gitignored. Read it
-  before touching frontend styling rather than re-deriving the tokens.
+- The frontend design system lives in `.claude/skills/trainer-design/SKILL.md`, gitignored. Read
+  it before touching frontend styling rather than re-deriving the tokens.
