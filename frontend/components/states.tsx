@@ -29,16 +29,40 @@ export function SpreadSkeleton() {
   );
 }
 
-export function QueueSkeleton() {
+export function QueueSkeleton({
+  label = "Building your recommendations",
+}: {
+  label?: string;
+} = {}) {
   return (
     <div aria-busy="true" aria-live="polite">
-      <span className="sr-only">Building your recommendations</span>
+      <span className="sr-only">{label}</span>
       {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="border-rule border-b py-4">
           <div className="bg-quiet/15 h-4 w-2/3 rounded-[2px]" />
           <div className="bg-quiet/10 mt-2 h-3 w-1/3 rounded-[2px]" />
         </div>
       ))}
+    </div>
+  );
+}
+
+export function SessionSkeleton() {
+  return (
+    <div aria-busy="true" aria-live="polite">
+      <span className="sr-only">Loading your session</span>
+      <div className="panel p-5">
+        <div className="bg-quiet/15 h-5 w-1/2 rounded-[2px]" />
+        <div className="bg-quiet/10 mt-2 h-3 w-1/4 rounded-[2px]" />
+        <div className="border-rule mt-6 border-t">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="border-rule border-b py-4 last:border-b-0">
+              <div className="bg-quiet/10 h-3 w-24 rounded-[2px]" />
+              <div className="bg-quiet/12 mt-2 h-4 w-3/4 rounded-[2px]" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

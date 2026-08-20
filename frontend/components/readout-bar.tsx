@@ -74,6 +74,7 @@ export function ReadoutBar() {
 
   const links = [
     { href: "/", label: "Instrument" },
+    { href: "/practice", label: "Practice" },
     { href: "/revision", label: "Revision" },
     { href: "/integrations", label: "Accounts" },
   ];

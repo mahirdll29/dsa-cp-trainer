@@ -110,3 +110,25 @@ export function providerTag(provider: "CODEFORCES" | "LEETCODE"): string {
   return provider === "CODEFORCES" ? "CF" : "LC";
 }
 
+
+// The session clock and the hint countdown, both tabular so neither jitters as the
+// digits change. Hours appear only once there are hours, so a normal session reads
+// as mm:ss rather than 00:14:32.
+export function formatClock(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+
+  const mmss = `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  return hours > 0 ? `${hours}:${mmss}` : mmss;
+}
+
+// Sessions are minutes to hours long, so relativeTime's day-scale buckets are the
+// wrong instrument for one.
+export function formatDuration(startIso: string, endIso: string): string {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return NO_DATA;
+  return formatClock((end - start) / 1000);
+}
