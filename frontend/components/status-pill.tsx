@@ -2,18 +2,8 @@
 
 import type { SyncStatus } from "@/lib/types";
 
-// ---------------------------------------------------------------------------
-// The four real values of LinkedAccount.syncStatus, rendered honestly.
-//
-// COLOUR IS NOT THE ONLY SIGNAL: the word is always printed. A pill that showed
-// a red dot and nothing else would put the most important state in the app
-// behind a hue.
-//
-// PENDING is the state a freshly linked account sits in before its first sync,
-// and it is rendered in --quiet rather than a warning colour on purpose. It is
-// not a problem; it means "nothing has happened yet", which is exactly what
-// --quiet means everywhere else in this interface.
-// ---------------------------------------------------------------------------
+// SyncStatus rendered as a word, never as a bare colour: the four states are not on
+// one axis, so the label carries the meaning and the tint only reinforces it.
 
 const LABEL: Record<SyncStatus, string> = {
   PENDING: "Never synced",

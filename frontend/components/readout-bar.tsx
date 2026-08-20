@@ -10,25 +10,13 @@ import { useIntegrationsVersion } from "@/lib/integrations-context";
 import { useResource } from "@/lib/use-resource";
 import { StatusPill } from "./status-pill";
 
-// ---------------------------------------------------------------------------
-// THE READOUT — permanent, on every screen, above everything else.
-//
-// WHY THIS IS A FIXED BAR AND NOT A TOAST. Every number in this app is a
-// snapshot of an on-demand import, so it is ALWAYS some amount of stale. That
-// is a permanent property of the data, not an event that happens once, and a
-// toast is the wrong shape for a permanent property — it fires, it disappears,
-// and the user is left reading numbers with no idea how old they are. Here the
-// age is simply always on screen.
-//
-// The bar carries both a relative age ("2h ago", which answers "should I
-// resync?") and the absolute timestamp in the title attribute (which answers
-// "is this the run I just did?").
-// ---------------------------------------------------------------------------
+// Permanent, on every screen. Every number in this app is a snapshot of an on-demand
+// import, so it is ALWAYS some amount of stale - that is a permanent property of the
+// data, not an event, and a toast is the wrong shape for a permanent property.
 
-// 404 from /status means NO ACCOUNT IS LINKED. That is a normal state of this
-// application, not a failure, and it is the single most common response this
-// component will get — most visitors have linked nothing. Mapping it to null
-// here is what stops a brand-new user seeing an error bar on a working page.
+// 404 from /status means NO ACCOUNT IS LINKED - a normal state and the single most
+// common response this component gets. Mapping it to null is what stops a brand-new
+// user seeing an error bar on a working page.
 async function fetchStatus(provider: "codeforces" | "leetcode") {
   try {
     return await api<IntegrationStatus>(`/api/integrations/${provider}/status`);
@@ -79,8 +67,7 @@ export function ReadoutBar() {
   const { user, signOut } = useAuth();
   const pathname = usePathname();
 
-  // `version` bumps whenever the integrations page links, syncs or unlinks
-  // something, which is what makes this bar re-read instead of going stale.
+  // `version` bumps when the integrations page links, syncs or unlinks something.
   const { version } = useIntegrationsVersion();
   const codeforces = useResource(() => fetchStatus("codeforces"), version);
   const leetcode = useResource(() => fetchStatus("leetcode"), version);

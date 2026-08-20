@@ -3,22 +3,10 @@
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
 
-// ---------------------------------------------------------------------------
-// LOADING, EMPTY AND ERROR — designed screens, not afterthoughts.
-//
-// All three are states a real user spends real time in: the recommendation
-// pipeline measures 4.7-7.7 seconds, a brand-new account has nothing linked,
-// and provider syncs genuinely fail. Each gets the same care as the populated
-// version of the same screen.
-// ---------------------------------------------------------------------------
+// The loading, error and empty states, shared by every page.
 
-// THE SKELETON IS THE SHAPE OF THE REAL THING, not a generic pulsing block.
-//
-// It draws the actual row count at the actual row pitch with the actual axis
-// in place, so when the data lands NOTHING MOVES — no reflow, no jump, no
-// scroll position lost. That is the functional argument for a skeleton over a
-// spinner; the aesthetic one is that a spinner tells you nothing while this
-// tells you what is coming.
+// The skeleton is the SHAPE of the real thing, not a generic grey box, so the layout
+// does not jump when content arrives.
 export function SpreadSkeleton() {
   return (
     <div aria-busy="true" aria-live="polite">
@@ -55,10 +43,8 @@ export function QueueSkeleton() {
   );
 }
 
-// ERRORS SAY WHAT HAPPENED AND WHAT TO DO, in the interface's voice. They do
-// not apologise and they are never vague — "Something went wrong" is exactly
-// the message this component exists to avoid, so the backend's own text is
-// shown whenever there is one.
+// Errors say what happened and what to do. The ApiError message is the backend's own
+// wording, which is more specific than anything this component could invent.
 export function ErrorState({
   error,
   onRetry,
@@ -90,8 +76,7 @@ export function ErrorState({
   );
 }
 
-// AN EMPTY SCREEN IS AN INVITATION TO ACT. It names the one thing that will
-// change it and links straight there.
+// An empty screen is an invitation to act: it names the next step and links to it.
 export function EmptyState({
   title,
   body,

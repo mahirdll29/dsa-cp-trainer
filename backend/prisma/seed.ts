@@ -1,15 +1,7 @@
 import prisma from "../src/lib/prisma";
 
-// The canonical DSA topic list.
-//
-// Topic is a table rather than an enum precisely so this list can grow without
-// a schema migration — adding a topic here and re-running the seed is enough.
-//
-// `slug` is the stable machine key the provider importers map their tags onto
-// (Codeforces sends "binary search", LeetCode sends "Binary Search" — both map
-// to "binary-search"). `name` is only ever for display. Renaming a topic later
-// means changing `name` and leaving `slug` alone, so existing mastery rows and
-// tag mappings keep working.
+// The canonical topic list. Slugs are the stable identifier the provider importers
+// map their own tag vocabularies onto; names are for display.
 const TOPICS = [
   { name: "Arrays", slug: "arrays" },
   { name: "Strings", slug: "strings" },
@@ -46,9 +38,7 @@ const TOPICS = [
 ];
 
 async function main() {
-  // upsert, not create: the seed must be safe to re-run. `create` would throw
-  // P2002 on the unique slug the second time; upsert matches on slug and leaves
-  // the existing row (and its id, which mastery rows point at) untouched.
+  // upsert on slug, not create: the seed must be safe to re-run.
   for (const topic of TOPICS) {
     await prisma.topic.upsert({
       where: { slug: topic.slug },

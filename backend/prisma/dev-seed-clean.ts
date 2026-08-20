@@ -1,23 +1,11 @@
 import prisma from "../src/lib/prisma";
 
-// ---------------------------------------------------------------------------
-// Teardown for prisma/dev-seed.ts. Removes ONLY the fabricated rows and leaves
-// the 32 production topics untouched.
-//
-// THE DELETION ORDER IS FORCED BY THE SCHEMA, not by preference:
-//
-//   Problem -> UserProblem and Problem -> RevisionItem are onDelete: Restrict
-//   (architecture.md 2.3), because a Problem is shared reference data and
-//   deleting one must never silently erase somebody's real solve history.
-//
-// So the dev problems CANNOT be deleted while any UserProblem or RevisionItem
-// points at them. Deleting the dev users first clears those rows by Cascade,
-// after which the problems are free.
-//
-// Attempting it the other way round raises PostgreSQL 23001, which — per the
-// Module 1 finding — Prisma does NOT map to a P-code: it surfaces as
-// PrismaClientUnknownRequestError with error.code === undefined.
-// ---------------------------------------------------------------------------
+// DELETION ORDER IS FORCED BY THE SCHEMA. Problem -> UserProblem and
+// Problem -> RevisionItem are onDelete: Restrict, so the dev problems cannot be
+// deleted while any solve or revision row points at them. Deleting the dev users
+// first clears those by Cascade. The other order raises PostgreSQL 23001, which
+// Prisma does NOT map to a P-code - it surfaces as PrismaClientUnknownRequestError
+// with error.code undefined.
 
 async function main() {
   // Cascades UserProblem, TopicMastery, RevisionItem and LinkedAccount.

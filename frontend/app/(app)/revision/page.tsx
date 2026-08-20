@@ -16,20 +16,11 @@ import { REORDER } from "@/lib/motion";
 import type { RevisionItem } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 
-// ---------------------------------------------------------------------------
-// DUE FOR REVIEW — the spaced-repetition queue.
+// "Due" means dueAt <= now, and the backend returns only those - future items are
+// absent rather than greyed out, so this page is a session and never a backlog.
 //
-// "Due" means dueAt <= now, and the backend returns ONLY those. Items scheduled
-// for the future are absent rather than present-and-greyed-out, which is a
-// deliberate property of the planner: a list that shows everything is a list
-// people stop reading. So this page is never a backlog, it is a session.
-//
-// The interval ladder is 1, 3, 7, 14, 30 days, fixed for every problem and
-// every user. Real SM-2 would adapt each interval from a self-rated recall
-// score — we do not collect one, and inventing it from attempt count would be
-// fiction dressed as an algorithm. Showing `rep n · Nd` is how the ladder stays
-// honest and visible instead of feeling arbitrary.
-// ---------------------------------------------------------------------------
+// The ladder is fixed at 1, 3, 7, 14, 30 days for every problem and every user.
+// Showing `rep n / Nd` is how that stays visible instead of feeling arbitrary.
 
 function RevisionRow({
   item,
@@ -49,12 +40,9 @@ function RevisionRow({
     setError(null);
     try {
       await api(`/api/revision/${item.problemId}/review`, { method: "POST" });
-      // The item is no longer due — the backend advanced it up the ladder and
-      // pushed dueAt into the future — so it leaves the list. Removing it
-      // locally rather than refetching is not an optimisation for its own sake:
-      // GET /api/revision/due would return the same list minus this row, and
-      // paying a round trip to be told something we already know would also
-      // reset the scroll position mid-session.
+      // The backend advanced it and pushed dueAt into the future, so it leaves the list.
+      // Removing it locally rather than refetching also avoids resetting scroll position
+      // mid-session.
       onReviewed(item.problemId);
     } catch (caught) {
       setError(
@@ -156,9 +144,8 @@ export default function RevisionPage() {
             context="Couldn't load your revision queue."
           />
         ) : items.length === 0 ? (
-          // NOTHING DUE IS A GOOD OUTCOME, not an empty shelf, and the copy says
-          // so. It also explains where items come from, because a user who has
-          // never synced would otherwise read this as the feature being broken.
+          // Nothing due is a good outcome, not an empty shelf. The copy also explains where
+          // items come from, or a user who has never synced reads this as the feature broken.
           <EmptyState
             title="Nothing due today."
             body="Revision items are created when you solve something, and come back on a 1, 3, 7, 14, then 30 day ladder. Solve a few problems and they will show up here."

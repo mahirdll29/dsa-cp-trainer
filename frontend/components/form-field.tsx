@@ -3,18 +3,8 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-// ---------------------------------------------------------------------------
-// One labelled input, and one error banner. Both exist because the two auth
-// forms need them identically and a divergence would be invisible — the classic
-// version of this bug is one form wiring up `htmlFor` and the other not, which
-// nobody notices until someone tries to use it with a screen reader.
-//
-// SEMANTICS THAT ARE NOT OPTIONAL HERE:
-//   - a real <label> bound by htmlFor/id, so clicking the label focuses the
-//     field and assistive tech announces it
-//   - aria-invalid on failure, so the state is not carried by colour alone
-//   - autoComplete tokens, so password managers behave
-// ---------------------------------------------------------------------------
+// A labelled input with its error state. Every field has a real <label> bound by id,
+// and aria-invalid tracks the error rather than colour alone.
 
 export function FormField({
   id,
@@ -67,17 +57,8 @@ export function FormField({
   );
 }
 
-// THE ERROR BANNER.
-//
-// `role="alert"` so it is announced the moment it appears — a sighted user sees
-// it because it just materialised, and this is the equivalent for everyone
-// else.
-//
-// It renders the BACKEND'S OWN MESSAGE rather than a generic one. Those
-// messages were written to be specific ("Email format is invalid", "Password
-// must be at least 8 characters", "Email already registered"), and replacing
-// them with "Something went wrong" would throw away the only part of the
-// response the user can act on.
+// The error banner. role="alert" so a screen reader announces it when it appears,
+// which is the whole reason it is a separate component rather than a styled <p>.
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (

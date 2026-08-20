@@ -1,102 +1,41 @@
-// ---------------------------------------------------------------------------
-// THE ONLY FILE IN THIS PROJECT THAT TALKS TO THE LEETCODE WRAPPER.
-//
-// Same rule as providers/codeforces/client.ts, and here it matters MORE.
-//
-// LeetCode has NO official public API. Everything below goes through
-// alfa-leetcode-api, a community-maintained wrapper around LeetCode's internal
-// GraphQL endpoint. It is unofficial twice over — the wrapper can change, and
-// the GraphQL schema it wraps can change underneath IT, without notice to
-// anybody. Codeforces was the stable one. This is not.
-//
-// So the isolation rule is the whole defence: when a field gets renamed or an
-// endpoint starts returning something else, the blast radius is this one file.
-// Nothing below leaks a URL, a header or a raw response shape to the rest of
-// the codebase — callers get plain typed objects or a typed error.
-// ---------------------------------------------------------------------------
+// The only file in this project that talks to the LeetCode wrapper, and the
+// isolation matters more here than it does for Codeforces: this is unofficial twice
+// over. The community wrapper can change, and the internal GraphQL schema it wraps
+// can change underneath it, without notice to anybody.
 
-// CONFIGURABLE BASE URL — the practical consequence of "unofficial".
-//
-// The public instance can go down, get rate limited, or be abandoned. Putting
-// the host in an env var means self-hosting the wrapper (it ships a Docker
-// image) is a CONFIG CHANGE, not a code change. That option is why this is an
-// env var and not a constant.
-//
-// UNLIKE JWT_SECRET (architecture.md 4.8) this does NOT use requireEnv and
-// fail fast. There is no security consequence to a default, and a missing value
-// must not stop the whole server booting for users who never touch LeetCode.
-// The default IS the documented public instance.
-//
-// Read at module scope, which is safe because both entry points (server.ts and
-// prisma/sync-lc-problems.ts) import "dotenv/config" before importing anything
-// that reaches this file — see session-handoff trap 3.
+// Configurable so self-hosting the wrapper (it ships a Docker image) is a config
+// change rather than a code change. Unlike JWT_SECRET this does NOT fail fast: there
+// is no security consequence to a default, and a missing value must not stop the
+// server booting for users who never touch LeetCode.
 const LEETCODE_API_URL = (
   process.env.LEETCODE_API_URL || "https://alfa-leetcode-api.onrender.com"
 ).replace(/\/+$/, ""); // trailing slash would produce "host//problems"
 
-// 45 SECONDS, AND THE NUMBER IS NOT ARBITRARY.
-//
-// Measured warm latency against the public instance: 0.36-0.92 s. So this is a
-// HANG DETECTOR, not a tuning knob — nothing healthy comes anywhere near it.
-//
-// But the instance runs on Render's free tier, which SPINS DOWN after idle. A
-// cold start takes 30-60 s, so Module 4's 30 s would fail every first request
-// of the day, and the 10 s a reasonable person would guess fails always.
-//
-// THE SUBTLE PART: 45 s plus the retry is deliberately better than a bare 60 s.
-// Our first request is what TRIGGERS the boot. Even if we abort at 45 s, Render
-// keeps booting; the retry 5 s later lands on an instance that is warm or
-// nearly so. The timeout and the retry together ARE the cold-start strategy.
+// 45 s, and the number is not arbitrary. Warm latency is 0.36-0.92 s, so this is a
+// hang detector - but the wrapper runs on a free tier that SPINS DOWN when idle and
+// cold-starts in 30-60 s. Our first request is what triggers the boot; even if we
+// abort at 45 s the instance keeps booting, so the retry 5 s later lands on one that
+// is warm. The timeout and the retry together ARE the cold-start strategy.
 const REQUEST_TIMEOUT_MS = 45_000;
 
-// THE REAL RATE LIMIT, discovered the hard way during verification. The
-// wrapper's README says a limit exists without publishing the number, and 60
-// consecutive requests during planning produced no 429 at all — which led to
-// the wrong conclusion. The actual response headers say:
+// THE RATE LIMIT IS AN HOURLY QUOTA, NOT A PER-SECOND RATE: 120 requests/hour/IP
+// (ratelimit-policy: 120;w=3600). Sleeping between requests does NOT buy budget back
+// - 41 requests cost 41 of the 120 whether sent over 90 seconds or 90 minutes. So
+// this interval exists only to avoid bursting at a free-tier instance, not to
+// respect the quota, which it cannot influence.
 //
-//     ratelimit-policy: 120;w=3600
-//     ratelimit: limit=120, remaining=0, reset=1407
-//     retry-after: 1407
-//     Too many request from this IP, try again in 1 hour
-//
-// IT IS AN HOURLY QUOTA, NOT A PER-SECOND RATE: 120 requests per hour per IP.
-// That distinction changes what spacing is even for. Sleeping between requests
-// does NOT buy budget back — 41 requests cost 41 of the 120 whether they are
-// sent over 90 seconds or 90 minutes. The only thing that protects the quota is
-// not running the catalog repeatedly.
-//
-// So this interval stays modest: it exists to avoid BURSTING at the instance
-// (which is free-tier hosting and deserves the courtesy), not to respect the
-// quota, which it cannot influence. Pacing at the quota rate would mean 30 s
-// between requests and a 20-minute catalog run, for no benefit.
-//
-// THE BUDGET, STATED PLAINLY, because it is the real operational constraint:
-//   full catalog run   41 requests   (about a third of the hourly quota)
-//   one user sync      2 requests    (+1 per gap lookup, capped at 10)
-// Three catalog runs in one hour will exhaust the quota. Two will not.
+// The budget: a full catalog run is ~41 requests, a user sync is 2 (+1 per gap
+// lookup, capped at 10). Two catalog runs in an hour is fine; three is not.
 const MIN_REQUEST_INTERVAL_MS = 1_500;
 
 // The quota, mirrored here only so the log can say how much is left.
 const HOURLY_QUOTA = 120;
 
-// ONE bounded retry, exactly as Module 4. A retry loop against free-tier
-// hosting is a self-inflicted outage: the instance is slow because it is
-// struggling, and hammering it is how a blip becomes an outage.
-//
-// VERIFICATION CONFIRMED THE BOUND IS RIGHT, from the opposite direction than
-// expected. Against a spent hourly quota the server says retry-after: 1407
-// SECONDS. No backoff worth writing will outlast that, so the retry is
-// correctly useless there — it tries once, gives up, and surfaces a clean
-// RATE_LIMITED instead of spinning. A more elaborate backoff would have burned
-// more of a quota that was already gone.
+// One bounded retry. Against a spent quota the server answers retry-after: ~1400
+// SECONDS, so no backoff worth writing outlasts it - the retry is correctly useless
+// there, surfacing a clean RATE_LIMITED instead of spinning.
 const MAX_RETRIES = 1;
 const RETRY_BACKOFF_MS = 5_000;
-
-// ---------------------------------------------------------------------------
-// ERRORS — a typed `kind`, so callers never string-match on a message.
-// Same vocabulary as CodeforcesError, so routes/leetcode.ts reads like
-// routes/codeforces.ts.
-// ---------------------------------------------------------------------------
 
 export type LeetcodeErrorKind =
   | "NOT_FOUND" // the username does not exist -> the route returns 404
@@ -115,19 +54,9 @@ export class LeetcodeError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// SHAPES WE READ. Only the fields this project actually uses — the wrapper
-// returns far more (acRate, freqBar, likes, companyTagStats, the full HTML
-// problem statement) and modelling all of it would be work with no consumer
-// plus more surface to break.
-// ---------------------------------------------------------------------------
-
-// Difficulty is a NARROWED UNION, not a string, and that is deliberate.
-// Problem.difficultyRaw and Problem.difficultyBand are both NOT NULL, and there
-// is no sensible default for an unrecognised grade. Making the type only
-// admit the three real values means the compiler forces the check to happen
-// HERE, once, rather than trusting every downstream caller to remember.
-// Same trick as Module 4's classifyProblem returning a narrowed type.
+// A narrowed union, not a string: both difficulty columns are NOT NULL and there is
+// no sensible default for an unrecognised grade, so the compiler forces the check to
+// happen here, once, rather than trusting every downstream caller to remember.
 export type LcDifficulty = "Easy" | "Medium" | "Hard";
 
 const DIFFICULTIES: ReadonlySet<string> = new Set(["Easy", "Medium", "Hard"]);
@@ -150,9 +79,8 @@ export type LcProfile = {
   username: string;
 };
 
-// A page of the catalog. `total` is the wrapper's own totalQuestions, used only
-// for progress logging — the pagination loop terminates on a SHORT PAGE, never
-// on this number (see getProblemsPage).
+// `total` is used only for progress logging - the pagination loop terminates on a
+// short page, never on this number.
 export type LcProblemsPage = {
   items: LcCatalogProblem[];
   malformed: number;
@@ -164,14 +92,8 @@ export type LcListResult<T> = {
   malformed: number;
 };
 
-// ---------------------------------------------------------------------------
-// THE RATE-LIMIT GATE — identical mechanism to Module 4.
-//
-// Every outbound request goes through one promise chain, so requests are
-// SERIALIZED and spaced regardless of who calls what. The spacing lives here
-// rather than at the call sites so a caller cannot forget it, and so the
-// catalog crawl's 41 pages inherit it for free.
-// ---------------------------------------------------------------------------
+// One promise chain serialises every outbound request, so the catalog crawl's 41
+// pages inherit the spacing for free and no caller can forget it.
 
 let requestQueue: Promise<unknown> = Promise.resolve();
 let lastRequestStartedAt = 0;
@@ -188,51 +110,28 @@ function serialized<T>(task: () => Promise<T>): Promise<T> {
     return task();
   });
 
-  // THE `.catch` IS LOAD-BEARING (session-handoff trap 13). If the queue tail
-  // were the rejecting promise itself, one failure would reject every request
-  // scheduled after it, and a single bad username would take down syncing for
-  // everybody until the process restarted. We chain on a neutered copy; the
-  // real rejection still reaches the caller through `result`.
+  // Without this .catch the queue tail would be the rejecting promise itself, and one
+  // bad username would reject every request scheduled after it until restart.
   requestQueue = result.catch(() => undefined);
 
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// ONE HTTP CALL.
+// THE TRAP, AND IT IS THE EXACT INVERSE OF CODEFORCES'. Codeforces returns a good
+// body with a bad status; this wrapper returns a BAD BODY WITH A GOOD STATUS:
 //
-// THE TRAP, AND IT IS THE EXACT INVERSE OF CODEFORCES'.
+//   GET /zzznotarealuser99xq  ->  HTTP 200
+//   {"errors":[{"message":"That user does not exist."}],"data":{"matchedUser":null}}
 //
-// Module 4 found that Codeforces returns a GOOD BODY WITH A BAD STATUS: an
-// unknown handle is HTTP 400 carrying valid JSON, so `if (!response.ok) throw`
-// discards the reason and turns a 404 into a 502.
-//
-// This wrapper does the opposite: a BAD BODY WITH A GOOD STATUS. Verified
-// against the live API:
-//
-//   GET /zzznotarealuser99xq
-//   -> HTTP 200
-//      {"errors":[{"message":"That user does not exist.", ...}],
-//       "data":{"matchedUser":null, ...}}
-//
-// So `if (response.ok) { /* success */ }` cheerfully "imports" a user who does
-// not exist. The status code carries NO information about whether the request
-// worked. Every response has to be inspected on its own terms:
-//
-//   1. Is it JSON at all? Render serves an HTML error page when the instance
-//      is down, and JSON.parse on "<!DOCTYPE html>" throws.
-//   2. Is there a GraphQL `errors` array? If so it failed, whatever the status.
-//   3. Do the specific fields we read exist, with the right types?
-//
-// Hand-written, no Zod (CLAUDE.md).
-// ---------------------------------------------------------------------------
+// So `if (response.ok)` cheerfully "imports" a user who does not exist. The status
+// code carries NO information. Every response is inspected on its own terms: is it
+// JSON at all, is there a GraphQL errors array, do the fields we read exist.
 
 async function callOnce(path: string): Promise<unknown> {
   const url = `${LEETCODE_API_URL}${path}`;
 
-  // AbortController is the ONLY way to bound fetch — it has no timeout option
-  // and will otherwise wait as long as the socket stays open. Without this a
-  // hung upstream holds our HTTP request open AND holds the SYNCING lock.
+  // AbortController is the only way to bound fetch; without it a hung upstream holds
+  // our request open AND holds the SYNCING lock.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -240,8 +139,7 @@ async function callOnce(path: string): Promise<unknown> {
   try {
     response = await fetch(url, { signal: controller.signal });
   } catch (error) {
-    // An aborted fetch rejects, so "did we time out?" is answered by the
-    // signal, not by inspecting the error message.
+    // Answered by the signal, not by the error message.
     if (controller.signal.aborted) {
       throw new LeetcodeError(
         "TIMEOUT",
@@ -253,28 +151,21 @@ async function callOnce(path: string): Promise<unknown> {
       `LeetCode ${path} could not be reached: ${(error as Error).message}`
     );
   } finally {
-    // Always clear it. A pending timer keeps the event loop alive, so leaking
-    // one per request makes the process hang on shutdown for up to 45 s.
+    // A leaked timer keeps the event loop alive and hangs shutdown for up to 45 s.
     clearTimeout(timer);
   }
 
-  // THE QUOTA IS ONLY VISIBLE IN HEADERS, so it is read before anything else.
-  // A caller that makes 41 requests has a real interest in knowing it has 79
-  // left, and there is nowhere else to learn it.
+  // The quota is visible only in headers, so it is read before anything else can throw.
   recordQuota(response);
 
-  // Step 1: is it JSON at all?
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    // Not JSON. TWO REAL CASES, and they must not be conflated:
-    //
-    //   429 -> the rate-limit body is PLAIN TEXT ("Too many request from this
-    //          IP, try again in 1 hour"), not JSON. Verified live. A handler
-    //          that only looked for a JSON error envelope would mislabel a
-    //          quota exhaustion as a dead server.
-    //   else -> an HTML error page from Render, or a proxy interstitial.
+    // Not JSON. Two real cases that must not be conflated: a 429 body is PLAIN TEXT
+    // ("Too many request from this IP, try again in 1 hour"), so a handler looking only
+    // for a JSON envelope would mislabel quota exhaustion as a dead server. Anything
+    // else is an HTML error page from the host.
     if (response.status === 429) {
       throw new LeetcodeError("RATE_LIMITED", rateLimitMessage(response, path));
     }
@@ -284,7 +175,7 @@ async function callOnce(path: string): Promise<unknown> {
     );
   }
 
-  // Step 2: a GraphQL error envelope, REGARDLESS of the HTTP status.
+  // A GraphQL error envelope, REGARDLESS of the HTTP status.
   const record = asRecord(body);
   if (record && Array.isArray(record.errors) && record.errors.length > 0) {
     const first = asRecord(record.errors[0]);
@@ -293,10 +184,8 @@ async function callOnce(path: string): Promise<unknown> {
         ? first.message
         : "no reason given";
 
-    // The wrapper passes LeetCode's own wording straight through. This is the
-    // only signal separating "you asked for something that isn't there" from
-    // "something broke", so it is matched loosely and defaults to UNAVAILABLE
-    // — misreporting a real outage as a 404 would be worse than the reverse.
+    // Matched loosely and defaulting to UNAVAILABLE: misreporting a real outage as a
+    // 404 would be worse than the reverse.
     if (/does not exist|not found/i.test(message)) {
       throw new LeetcodeError("NOT_FOUND", message);
     }
@@ -317,19 +206,11 @@ async function callOnce(path: string): Promise<unknown> {
   return body;
 }
 
-// ---------------------------------------------------------------------------
-// QUOTA VISIBILITY
-//
-// The hourly budget is reported ONLY in response headers, so without this the
-// catalog script would have no way to tell "39 requests left" from "plenty".
-// Logged at thresholds rather than every request — 41 lines of "remaining=87"
-// is noise, but crossing below a quarter of the quota is worth knowing before
-// the next run rather than after it fails.
-// ---------------------------------------------------------------------------
+// The hourly budget is reported only in response headers, so without this a caller
+// has no way to tell "39 requests left" from "plenty".
 
-// Thresholds, not every request: a catalog run makes 41 calls and 41 lines of
-// "remaining=87" is noise that trains you to ignore the one line that matters.
-// Each threshold fires at most once per process.
+// Thresholds, not every request: 41 lines of "remaining=87" trains you to ignore
+// the one line that matters. Each threshold fires at most once per process.
 const QUOTA_WARN_AT = [30, 15, 5];
 const warnedAt = new Set<number>();
 
@@ -340,8 +221,8 @@ function parseRemaining(response: Response): number | null {
     const match = /remaining=(\d+)/.exec(combined);
     if (match) return Number(match[1]);
   }
-  // Older/alternate spelling, kept because this is an unofficial service and
-  // the header format is not a contract.
+  // Alternate spelling, kept because this is an unofficial service and the header
+  // format is not a contract.
   const legacy = response.headers.get("ratelimit-remaining");
   if (legacy !== null && legacy !== "" && Number.isFinite(Number(legacy))) {
     return Number(legacy);
@@ -365,9 +246,8 @@ function recordQuota(response: Response): void {
 }
 
 function rateLimitMessage(response: Response, path: string): string {
-  // retry-after is in SECONDS and can be ~1400 of them. Reporting it is the
-  // difference between a user retrying uselessly for twenty minutes and one
-  // who knows to come back later.
+  // retry-after is in SECONDS and can be ~1400 of them. Reporting it is the difference
+  // between retrying uselessly for twenty minutes and knowing to come back later.
   const retryAfter = response.headers.get("retry-after");
   const seconds = Number(retryAfter);
   const suffix =
@@ -377,10 +257,8 @@ function rateLimitMessage(response: Response, path: string): string {
   return `LeetCode ${path} hit the rate limit (${HOURLY_QUOTA}/hour)${suffix}`;
 }
 
-// Only conditions that might genuinely differ a moment later are retried.
-// NOT_FOUND and MALFORMED are deterministic — the user will still not exist in
-// five seconds, and the shape will still be wrong — so retrying them only
-// doubles the latency of a guaranteed failure.
+// NOT_FOUND and MALFORMED are deterministic, so retrying them only doubles the
+// latency of a guaranteed failure.
 const RETRYABLE: ReadonlySet<LeetcodeErrorKind> = new Set([
   "RATE_LIMITED",
   "TIMEOUT",
@@ -411,10 +289,6 @@ async function call(path: string): Promise<unknown> {
   throw lastError;
 }
 
-// ---------------------------------------------------------------------------
-// VALIDATION HELPERS
-// ---------------------------------------------------------------------------
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -422,11 +296,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-// topicTags is `[{ name, id, slug }]`. We read ONLY the slug — the mapping
-// table in tags.ts is keyed on it, and `name` carries non-ASCII characters
-// ("Knuth–Morris–Pratt" uses an en-dash) that we would gain nothing by
-// handling. Validating a field we never read is busywork that breaks the
-// import when something irrelevant changes upstream.
+// Only the slug is read - the mapping table is keyed on it, and `name` carries
+// non-ASCII we would gain nothing by handling. Validating a field we never read is
+// busywork that breaks the import when something irrelevant changes upstream.
 function parseTagSlugs(raw: unknown): string[] | null {
   if (raw === undefined || raw === null) return []; // untagged is legal
   if (!Array.isArray(raw)) return null;
@@ -447,29 +319,17 @@ function parseDifficulty(raw: unknown): LcDifficulty | null {
   return raw as LcDifficulty;
 }
 
-// ---------------------------------------------------------------------------
-// THE FOUR CALLS
-// ---------------------------------------------------------------------------
-
-// HANDLE VALIDATION — and this endpoint is the ONLY one that can do it.
-//
-// Verified against the live API: /:username/acSubmission for a nonexistent user
-// returns HTTP 200 with {"count":0,"submission":[]}, which is BYTE-IDENTICAL to
-// a real user who has solved nothing. So a bad username can never be detected
-// during a sync; it has to be caught at link time, here, or not at all.
-//
-// Returns the wrapper's own spelling of the username rather than echoing the
-// caller's input, for the same reason Module 4 returns Codeforces' canonical
-// handle: LeetCode matches usernames case-insensitively, so storing "MahirDLL"
-// when the account is "mahirdll" leaves our data disagreeing with every link we
-// render.
+// THE ONLY ENDPOINT THAT CAN VALIDATE A USERNAME. /:username/acSubmission for a
+// nonexistent user returns 200 {"count":0,"submission":[]}, byte-identical to a real
+// user who has solved nothing - so a bad username can never be caught during a sync.
+// Returns the wrapper's own spelling, since LeetCode matches case-insensitively.
 export async function getProfile(username: string): Promise<LcProfile> {
   const body = await call(`/${encodeURIComponent(username)}`);
 
   const record = asRecord(body);
   if (!record || typeof record.username !== "string" || record.username === "") {
-    // A user that does not exist already threw NOT_FOUND from the `errors`
-    // check in callOnce. Reaching here means the shape itself is wrong.
+    // A nonexistent user already threw NOT_FOUND in callOnce; reaching here means the
+    // shape itself is wrong.
     throw new LeetcodeError(
       "MALFORMED",
       "LeetCode profile response contained no usable username"
@@ -479,21 +339,13 @@ export async function getProfile(username: string): Promise<LcProfile> {
   return { username: record.username };
 }
 
-// ONE PAGE OF THE CATALOG — the candidate pool the engine draws from.
-//
-// MEASURED CONSTRAINTS, none of which are documented:
-//
-//   limit is HARD-CAPPED AT 100. limit=500/1000/2000/5000 all return exactly
-//   100 rows (byte-identical bodies). It IS honoured downward (limit=5 -> 5).
-//   So the catalog is 41 pages, not one call — the opposite of Codeforces,
-//   where the entire problemset arrives in a single response.
-//
-//   skip PAST THE END CLAMPS instead of emptying: with 4019 problems,
-//   skip=4000 returns 19 rows and skip=4019 returns THE SAME 19 ROWS AGAIN.
-//   Only skip=4100 returns []. A loop that terminated on an empty page would
-//   therefore re-import a page before stopping. The caller terminates on a
-//   SHORT page instead, which never enters the clamped region at all — the
-//   trap is designed out rather than guarded against.
+// MEASURED CONSTRAINTS, none of them documented:
+//   limit is HARD-CAPPED AT 100 (limit=500/1000/5000 all return exactly 100), so the
+//   catalog is 41 pages where Codeforces was one call.
+//   skip PAST THE END CLAMPS instead of emptying: with 4019 problems skip=4000 gives
+//   19 rows and skip=4019 gives THE SAME 19 ROWS AGAIN. Only skip=4100 returns [].
+//   The caller therefore terminates on a SHORT page, never an empty one, which never
+//   enters the clamped region at all.
 export async function getProblemsPage(
   limit: number,
   skip: number
@@ -508,9 +360,8 @@ export async function getProblemsPage(
     );
   }
 
-  // A malformed TOP-LEVEL shape throws: it means we have misunderstood the
-  // endpoint entirely, and importing a partial result would be worse than
-  // failing. A malformed ELEMENT is skipped and counted (below).
+  // A malformed TOP-LEVEL shape throws - we have misunderstood the endpoint entirely,
+  // and a partial import is worse than a failure. A malformed ELEMENT is skipped.
   if (!Array.isArray(record.problemsetQuestionList)) {
     throw new LeetcodeError(
       "MALFORMED",
@@ -528,8 +379,8 @@ export async function getProblemsPage(
       continue;
     }
 
-    // Every field below lands in a NOT NULL column, so every one is required.
-    // Note `title` here — /select calls the same thing `questionTitle`.
+    // Every field below lands in a NOT NULL column. Note `title` here - /select calls
+    // the same thing `questionTitle`.
     const { titleSlug, title } = problem;
     if (typeof titleSlug !== "string" || titleSlug === "") {
       malformed++;
@@ -552,10 +403,9 @@ export async function getProblemsPage(
       continue;
     }
 
-    // Absent is treated as free rather than rejected: it is a boolean flag we
-    // use for filtering, not a value we store, and defaulting to "free" cannot
-    // corrupt a row. Present-but-not-a-boolean IS rejected, because that means
-    // the field changed meaning.
+    // Absent is treated as free rather than rejected: it is a flag we filter on, not a
+    // value we store. Present-but-not-a-boolean IS rejected - that means it changed
+    // meaning.
     if (
       problem.isPaidOnly !== undefined &&
       typeof problem.isPaidOnly !== "boolean"
@@ -581,19 +431,13 @@ export async function getProblemsPage(
   };
 }
 
-// THE USER'S RECENT ACCEPTED SUBMISSIONS.
+// THE DEFINING LIMITATION OF THIS MODULE, measured not assumed: limit is HARD-CAPPED
+// AT 20. The test account has 502 solved problems and this endpoint will surrender
+// 20 of them. There is no paging and no `since` parameter - the other 482 are simply
+// unreachable, which is why LeetCode mastery rests on a ~4% sample.
 //
-// THE DEFINING LIMITATION OF THIS WHOLE MODULE, measured not assumed:
-// limit is HARD-CAPPED AT 20. limit=50/100/500/1000 all return exactly 20.
-// The test account has 502 solved problems (per /:username/solved) and this
-// endpoint will surrender 20 of them. There is no paging parameter and no
-// "since" parameter — the other 482 are simply not reachable.
-//
-// That is why architecture.md records LeetCode mastery as being built on a ~4%
-// sample, and it is not something a later version can tune.
-//
-// Accepted-only by construction: every statusDisplay observed was "Accepted",
-// which is what lets the importer write status = SOLVED unconditionally.
+// Accepted-only by construction, which is what lets the importer write SOLVED
+// unconditionally.
 export async function getAcceptedSubmissions(
   username: string,
   limit: number
@@ -630,9 +474,8 @@ export async function getAcceptedSubmissions(
       continue;
     }
 
-    // TIMESTAMP IS A STRING OF UNIX EPOCH SECONDS: "1786583999". Not a number,
-    // not milliseconds, not ISO-8601. Accepting a number too costs one line
-    // and covers the wrapper deciding to "fix" the type later.
+    // Timestamp is a STRING of Unix epoch SECONDS ("1786583999") - not a number, not
+    // milliseconds, not ISO-8601. Accepting a number too covers the wrapper "fixing" it.
     const rawTs = submission.timestamp;
     const seconds =
       typeof rawTs === "string"
@@ -655,22 +498,17 @@ export async function getAcceptedSubmissions(
   return { items, malformed };
 }
 
-// ONE PROBLEM'S DETAIL — used only to close the acSubmission gap.
+// Closes the acSubmission gap: that endpoint gives a titleSlug but no difficulty and
+// no tags, and both difficulty columns are NOT NULL.
 //
-// acSubmission gives a titleSlug but NO difficulty and NO tags, and both
-// difficulty columns are NOT NULL. So a solved problem missing from our catalog
-// cannot be created from submission data alone; this is where the missing
-// fields come from. See sync.ts for the cap and the reasoning.
+// Returns null rather than throwing for "no such problem", because an unknown slug
+// returns HTTP 200 with a body of exactly {} - no error envelope, no 404. That is a
+// legitimate answer to "does this exist", so the caller skips the solve rather than
+// aborting the sync.
 //
-// RETURNS null FOR "NO SUCH PROBLEM" rather than throwing, because verified
-// against the live API an unknown slug returns HTTP 200 with a body of exactly
-// `{}` — no error envelope, no 404. An empty object is a legitimate answer to
-// "does this exist", not a failure, and the caller treats it as "skip this
-// solve" rather than "abort the sync".
-//
-// NOTE THE FIELD NAME: this endpoint calls the title `questionTitle`, where
-// /problems calls it `title`. Same concept, two names, two endpoints. Reading
-// `title` here yields undefined and drives it straight into a NOT NULL column.
+// NOTE THE FIELD NAME: this endpoint calls the title `questionTitle` where /problems
+// calls it `title`. Reading `title` here yields undefined and drives it into a NOT
+// NULL column.
 export async function getProblemDetail(
   titleSlug: string
 ): Promise<LcCatalogProblem | null> {
@@ -691,9 +529,8 @@ export async function getProblemDetail(
   const tagSlugs = parseTagSlugs(record.topicTags);
   if (!tagSlugs) return null;
 
-  // The response echoes titleSlug, but we prefer the one we ASKED for: it is
-  // the key we will store under and the key the caller is holding, and letting
-  // the response rename it would break the caller's lookup map.
+  // We prefer the slug we ASKED for over the one echoed back: it is the key we store
+  // under and the key the caller's lookup map is holding.
   return {
     titleSlug,
     title,

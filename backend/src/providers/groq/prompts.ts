@@ -1,25 +1,7 @@
-// ---------------------------------------------------------------------------
-// EVERY PROMPT IN THE PROJECT LIVES HERE. None is inlined in a handler.
-//
-// Prompt wording is a DESIGN DECISION, not an implementation detail: it is the
-// only thing standing between "explain this recommendation" and a model that
-// confidently describes a problem it has never seen. Keeping the prompts in one
-// file means they can be read, reviewed and changed as a set, the way the tag
-// tables in providers/*/tags.ts are.
-//
-// Every prompt below does four things:
-//   1. states the role,
-//   2. constrains the output shape explicitly,
-//   3. FORBIDS inventing problem details it was not given,
-//   4. stays short — these are sent on every single call, so every extra
-//      sentence is a permanent tax on latency and tokens.
-// ---------------------------------------------------------------------------
-
 import { Provider } from "@prisma/client";
 
-// The fields every prompt is built from. All of them come from a `Problem` row
-// or from the engine's own output — NOTHING here is supplied by the client. See
-// routes/ai.ts for why that matters.
+// Every field comes from a Problem row or from the engine's own output. NOTHING here
+// is supplied by the client - see routes/ai.ts.
 export type PromptProblem = {
   title: string;
   provider: Provider;
@@ -28,28 +10,13 @@ export type PromptProblem = {
   topics: string[];
 };
 
-// ---------------------------------------------------------------------------
-// WHY EVERY PROMPT SAYS "YOU HAVE NOT BEEN GIVEN THE PROBLEM STATEMENT".
-//
-// We do not store problem statements. Problem has title, url, difficultyRaw,
-// difficultyBand and topics via ProblemTopic — no statement text (and the
-// providers are asymmetric anyway: the Codeforces API does not return one at
-// all, LeetCode's /select does, and fetching it live would spend the wrapper's
-// 120-per-hour quota on a cosmetic feature).
-//
-// SO THE MODEL WILL INVENT ONE UNLESS TOLD NOT TO. This is not a hypothetical.
-// Verified during planning against this exact model, given only
-// `title: "Unit Array", topics: greedy+math, difficulty 800`, it produced:
-//
-//     "...adjusting each element to the nearest multiple of the target unit
-//      without overshooting"
-//
-// — a completely fabricated description of what the problem asks. Fluent,
-// confident, wrong, and indistinguishable from a real one to a learner who has
-// not opened the problem yet. A hallucinated problem statement is the worst
-// output this module can produce, so the prohibition is stated in every prompt
-// rather than once in a shared preamble that a future prompt might forget.
-// ---------------------------------------------------------------------------
+// EVERY PROMPT MUST STATE THAT THE PROBLEM STATEMENT WAS NOT PROVIDED. We do not
+// store statements, and without the prohibition the model invents one: given only
+// title "Unit Array" plus tags it described "adjusting each element to the nearest
+// multiple of the target unit" - fluent, confident, and entirely fabricated. A
+// hallucinated statement is the worst output this module can produce, so the rule is
+// repeated in each prompt rather than kept in a shared preamble a new prompt could
+// forget.
 
 export const EXPLAIN_SYSTEM_PROMPT = `You are a study coach for a DSA and competitive-programming practice tool.
 
@@ -73,49 +40,38 @@ Two or three sentences. No lists, no headings, no markdown.
 Reply with JSON only, in exactly this shape:
   {"hint": "<your two or three sentences>"}`;
 
-// ---------------------------------------------------------------------------
-// USER MESSAGES.
+// Problem.title is provider data, and Codeforces GYM CONTESTS ARE USER-CREATABLE - gym
+// problems reach our database through the user-sync path specifically. So the title is the
+// one field in this prompt an outsider can influence. Collapsing it to a single line and
+// bounding its length means it cannot open what looks like a new instruction block.
 //
-// Deliberately a flat list of labelled lines rather than JSON or prose. Labelled
-// lines are unambiguous to the model, cost fewer tokens than nested JSON, and
-// stay readable in a log — which matters, because when an explanation comes out
-// wrong the first question is always "what exactly did we send?".
-// ---------------------------------------------------------------------------
+// The engine `reason` is server-derived and is the defence that matters; this closes the
+// remaining gap rather than replacing it.
+const MAX_TITLE_CHARS = 120;
+
+function sanitizeTitle(title: string): string {
+  const oneLine = title.replace(/\s+/g, " ").trim();
+  return oneLine.length > MAX_TITLE_CHARS
+    ? `${oneLine.slice(0, MAX_TITLE_CHARS)}...`
+    : oneLine;
+}
 
 function describeProblem(problem: PromptProblem): string {
   return [
-    `Problem title: ${problem.title}`,
+    `Problem title: ${sanitizeTitle(problem.title)}`,
     `Provider: ${problem.provider}`,
-    // Both difficulty columns are shown because they say different things.
-    // difficultyRaw is the provider's own value ("1600", "Medium") and is what
-    // a user recognises; difficultyBand is our normalized EASY/MEDIUM/HARD and
-    // is the only one comparable across the two providers. architecture.md 2.2
-    // keeps them separate for exactly this reason, and the prompt benefits from
-    // both: "800 (EASY)" tells the model more than either half alone.
+    // Both difficulty columns: difficultyRaw is what a user recognises ("1600"),
+    // difficultyBand is the only one comparable across providers.
     `Difficulty: ${problem.difficultyRaw} (${problem.difficultyBand})`,
-    // Topic NAMES, not slugs. "Dynamic Programming" reads as English;
-    // "dynamic-programming" is a database key and would leak into the prose.
+    // Topic NAMES, not slugs - a slug is a database key and would leak into the prose.
     `Topics: ${problem.topics.length > 0 ? problem.topics.join(", ") : "none recorded"}`,
   ].join("\n");
 }
 
-// THE REASON SLOT IS THE WHOLE SECURITY STORY OF THIS MODULE.
-//
-// `reason` here is ALWAYS a string the engine produced — routes/ai.ts obtains it
-// by re-running buildRecommendations() for the authenticated user and reading
-// the reason off the matching recommendation. It is never taken from the request
-// body.
-//
-// The obvious API, POST /api/ai/explain { problemId, reason }, would let any
-// caller put arbitrary text into this exact position and have the model explain
-// a recommendation the engine never made. The boundary would still be documented
-// and would be gone in practice: the AI would be explaining the CLIENT's claim
-// while looking exactly like it was explaining the engine's.
-//
-// The real strings this receives, from engine/recommend.ts:
-//   "due for revision"              "unfinished attempt in <Topic>"
-//   "weak in <Topic>"               "unfinished attempt"
-//   "new topic: <Topic>"            "starting point: <Topic>"
+// `reason` is ALWAYS a string the engine produced: routes/ai.ts re-runs the pipeline
+// for the authenticated user and reads it off the matching recommendation. Accepting
+// it from the request body would let any caller put arbitrary text in this slot and
+// have the model explain a recommendation the engine never made.
 export function buildExplainUserMessage(
   problem: PromptProblem,
   reason: string

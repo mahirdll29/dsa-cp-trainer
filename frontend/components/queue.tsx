@@ -6,39 +6,21 @@ import { REORDER } from "@/lib/motion";
 import type { Recommendation } from "@/lib/types";
 import { AiAffordance } from "./explain";
 
-// ---------------------------------------------------------------------------
-// THE QUEUE — the engine's ranked list, rendered as a ledger.
+// The engine's ranked list, rendered as a ledger. Three rules, all from the engine
+// rather than from taste:
 //
-// THREE RULES THIS COMPONENT FOLLOWS, EACH FROM THE ENGINE RATHER THAN FROM
-// TASTE:
-//
-// 1. THE ORDER IS THE ENGINE'S AND IS NEVER TOUCHED. No sorting, no filtering,
-//    no shuffle, no "surprise me". buildRecommendations() runs four stages in
-//    priority order — due revisions, then unfinished attempts, then weak
-//    topics, then exploratory probes — with every tie broken on a unique
-//    column so the same data always produces the same list. That determinism
-//    is what makes the output testable, explainable and trustworthy: a user
-//    who refreshes should see the same plan, and a reason that changed between
-//    two refreshes would not be a reason, it would be a coincidence. Any
-//    client-side reordering would throw all three away.
-//
-// 2. THE NUMBERS ARE REAL. 01, 02, 03 encode rank, which is genuine
-//    information here — this is a priority sequence, not a set. (Numbered
-//    markers are usually decoration; they earn their place only when the
-//    content actually is ordered, and this is the case where it is.)
-//
-// 3. THE REASON IS ALWAYS VISIBLE. Auditability is the engine's entire pitch,
-//    so `reason` is a line of the row, not a tooltip and not something behind
-//    a hover. It is also the ONLY explanation available when the AI is off,
-//    which is the normal, supported configuration.
-// ---------------------------------------------------------------------------
+// 1. THE ORDER IS THE ENGINE'S AND IS NEVER TOUCHED. No sorting, no filtering, no
+//    shuffle. Any client-side reordering would throw away the determinism that makes
+//    the output testable, explainable and trustworthy.
+// 2. The 01, 02, 03 markers encode rank, which is genuine information here - this is
+//    a priority sequence, not a set.
+// 3. `reason` is a line of the row, not a tooltip. It is also the ONLY explanation
+//    available when the AI is off, which is a normal, supported configuration.
 
 function QueueRow({ item, rank }: { item: Recommendation; rank: number }) {
   return (
-    // `layout` animates this row to a new position IF the list genuinely
-    // reorders — after a sync recomputes mastery, for instance. Keyed on
-    // problemId so motion can tell a moved row from a replaced one. On first
-    // paint nothing animates, because nothing has moved yet.
+    // `layout` animates a row to a new position if the list genuinely reorders after a
+    // sync. Keyed on problemId so motion can tell a moved row from a replaced one.
     <motion.li layout transition={REORDER} className="border-rule border-b last:border-b-0">
       <div className="flex gap-4 py-4">
         <span className="t-data-xs text-quiet w-6 shrink-0 pt-1 text-right tabular-nums">

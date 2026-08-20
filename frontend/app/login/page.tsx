@@ -17,9 +17,8 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Someone who already has a valid session should not be looking at a login
-  // form. `replace` rather than `push` so the back button does not walk them
-  // into a page they will only be bounced off again.
+  // Someone with a valid session should not be looking at a login form. `replace` so
+  // the back button does not walk them into a page they are bounced off again.
   useEffect(() => {
     if (status === "authed") router.replace("/");
   }, [status, router]);
@@ -32,11 +31,9 @@ export default function LoginPage() {
       await signIn(email, password);
       router.replace("/");
     } catch (caught) {
-      // The backend answers "no such user" and "wrong password" with a
-      // byte-identical 401 "Invalid credentials" — deliberately, so login
-      // cannot be used to discover which email addresses are registered. We
-      // pass that message through unchanged rather than trying to be more
-      // helpful, because being more helpful here is the vulnerability.
+      // The backend answers "no such user" and "wrong password" with a byte-identical 401,
+      // deliberately, so login cannot be used to discover which addresses are registered.
+      // We pass that message through unchanged rather than trying to be more helpful.
       setError(caught instanceof ApiError ? caught.message : "Could not reach the server.");
       setSubmitting(false);
     }

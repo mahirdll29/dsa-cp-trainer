@@ -3,19 +3,9 @@
 import Link from "next/link";
 import { Plate } from "./plate";
 
-// ---------------------------------------------------------------------------
-// The frame shared by /login and /register.
-//
-// A SPLIT SCREEN, and the split is doing work rather than filling space: these
-// are the only two screens in the app with no data of their own, so they carry
-// the one deliberately beautiful object — Plate I — while the right half stays
-// as plain as a form should be. The visitor sees what the product produces
-// before they are asked for anything.
-//
-// On narrow screens the plate is DROPPED, not shrunk. It is a dense 32-row
-// diagram; scaled to 375px wide its labels become illegible and it stops being
-// a measurement and starts being a texture. A form on a phone should be a form.
-// ---------------------------------------------------------------------------
+// The shared frame for /login and /register: Plate I on one side, the form on the
+// other. Both pages carry the plate because it is the first thing a visitor sees and
+// it shows the product's actual output rather than a marketing illustration.
 
 export function AuthShell({
   title,
@@ -54,7 +44,7 @@ export function AuthShell({
   );
 }
 
-// One link style, defined once so the two auth pages cannot drift apart.
+// One link style, defined once so the two auth pages cannot drift.
 export function AuthLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link href={href} className="text-ink underline underline-offset-4 hover:no-underline">

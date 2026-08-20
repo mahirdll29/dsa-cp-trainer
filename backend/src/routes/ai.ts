@@ -17,38 +17,22 @@ import {
 } from "../providers/groq/prompts";
 import { buildRecommendations } from "../engine/recommend";
 
-// ---------------------------------------------------------------------------
-// THE AI LAYER — two endpoints, and the boundary they exist to respect.
-//
-// NOTE THE IMPORT AT THE BOTTOM OF THE LIST: this file imports the engine. The
-// engine imports nothing from here. That direction is not a convention, it is
-// THE ENFORCEMENT — reversing it would be an import cycle, which is visible in
-// a way a comment saying "the AI must not decide" is not.
-//
-// GET /api/recommendations is untouched by this module and never calls Groq. It
-// stays fast, deterministic and fully working with the key absent. The client
-// asks for an explanation AFTERWARDS, for an item it already has.
-//
-// Both routes are POST, so they inherit requireSameOrigin's CSRF check from
-// app.ts globally (architecture.md 3.4) — no per-route work was needed. Both
-// are behind requireAuth. Both are wrapped in asyncHandler, so a rejected
-// promise becomes a clean 500 instead of killing the process.
-// ---------------------------------------------------------------------------
+// NOTE THE IMPORT AT THE BOTTOM OF THE LIST: this file imports the engine and the
+// engine imports nothing from here. That direction is not a convention, it is THE
+// ENFORCEMENT - reversing it would be an import cycle, which is visible in a way a
+// comment saying "the AI must not decide" is not.
 
 const router = Router();
 
-// Turn a Groq failure into an HTTP status. Branching on the typed `kind` rather
-// than on message text means an upstream rewording can never silently convert a
-// 503 into a 500 — the same rule as statusForCodeforcesError and
-// statusForLeetcodeError.
+// Branching on the typed `kind` rather than message text, so an upstream rewording
+// can never silently convert a 503 into a 500.
 function statusForGroqError(error: GroqError): number {
   switch (error.kind) {
     case "NOT_CONFIGURED":
       return 503;
     case "RATE_LIMITED":
-      // 429 rather than 502, because the distinction is actionable: 502 means
-      // "something broke, tell someone", 429 means "wait and try again". The
-      // client's correct behaviour differs, so the status must too.
+      // 429 rather than 502: the distinction is actionable, because the client's correct
+      // behaviour differs.
       return 429;
     default:
       return 502; // TIMEOUT, UNAVAILABLE, MALFORMED
@@ -66,24 +50,19 @@ function messageForGroqError(error: GroqError): string {
     case "TIMEOUT":
       return "The AI service took too long to respond";
     case "MALFORMED":
-      // Deliberately vague to the client and specific in the log. "The model
-      // returned something we could not use" is not information a user can act
-      // on, and the real text may contain the prompt.
+      // Vague to the client and specific in the log: the real text may contain the prompt.
       return "The AI service returned an unusable response";
     default:
       return "The AI service is unavailable";
   }
 }
 
-// One place that turns a thrown GroqError into a response, because both routes
-// need it identically and a divergence would be silent. Anything that is NOT a
-// GroqError is re-thrown to asyncHandler and becomes a generic 500 — an
-// unexpected exception must not be dressed up as a tidy 502.
+// Anything that is NOT a GroqError is re-thrown - an unexpected exception must not be
+// dressed up as a tidy 502.
 function respondToGroqError(res: Response, error: unknown) {
   if (!(error instanceof GroqError)) throw error;
 
-  // The real error, with its kind, goes to the server log only. The client
-  // never sees internal text (architecture.md 3).
+  // The real error goes to the server log only; the client never sees internal text.
   console.error(`[groq] ${error.kind}: ${error.message}`);
 
   if (error.kind === "RATE_LIMITED" && error.retryAfterSeconds) {
@@ -95,19 +74,13 @@ function respondToGroqError(res: Response, error: unknown) {
     .json({ error: messageForGroqError(error) });
 }
 
-// The three guards every AI route runs before doing any work, in this order and
-// for a reason:
-//
-//   1. NOT CONFIGURED -> 503, BEFORE validating the body. If the feature is off
-//      it is off; telling a caller their problemId is malformed when we were
-//      never going to call Groq anyway is a misleading error.
-//   2. BODY VALIDATION -> 400. Hand-written, no Zod, same shape as every other
-//      route in the project.
-//   3. RATE LIMIT -> 429, BEFORE the database work. Limiting after the
-//      expensive part would protect the token budget and leave the ~15 Neon
-//      round trips of the recommendation pipeline completely exposed, which is
-//      the more expensive half.
-//
+// GUARD ORDER IS A CONTRACT, not a preference:
+//   1. not configured -> 503, BEFORE body validation. frontend/lib/ai-context.tsx
+//      POSTs an empty body and reads 503-vs-400 to decide whether to show the AI
+//      affordances at all. Reorder these and it silently reads "available".
+//   2. body validation -> 400.
+//   3. rate limit -> 429, BEFORE the database work, or limiting would protect the
+//      token budget while leaving the far more expensive pipeline exposed.
 // Returns the validated problemId, or null when it has already sent a response.
 function guard(req: Request, res: Response, userId: string): string | null {
   if (!isAiConfigured()) {
@@ -133,36 +106,19 @@ function guard(req: Request, res: Response, userId: string): string | null {
   return problemId.trim();
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/ai/explain  { problemId } -> { explanation }
+// THE REASON IS SERVER-DERIVED, and that is the whole security story of this module.
 //
-// THE FLAGSHIP ENDPOINT. It demonstrates the engine/AI split working: the
-// engine decided, and this narrates that decision.
+// The obvious API is { problemId, reason } - the client sends back the reason it was
+// given. That would let any authenticated caller put arbitrary text into the prompt's
+// reason slot and have the model confidently explain a recommendation the engine
+// never made, while looking exactly like it was explaining the engine's output.
 //
-// THE DESIGN DECISION THAT MATTERS IS WHERE THE REASON COMES FROM.
+// So we re-run the real pipeline for this user and read the reason off the matching
+// recommendation. If the problem is not in their current recommendations there is
+// nothing to explain -> 404, which is also the ownership boundary.
 //
-// The obvious API is { problemId, reason } — the client sends back the reason it
-// was given. That is wrong, and quietly so. It lets any authenticated caller put
-// arbitrary text into the prompt's reason slot and have the model confidently
-// explain a recommendation the engine never made. The AI would be explaining the
-// CLIENT'S CLAIM while looking exactly like it was explaining the engine's
-// output, which breaks the one boundary this module exists to enforce.
-//
-// So the reason is SERVER-DERIVED: we re-run the real pipeline for this user and
-// read the reason off the matching recommendation. If the problem is not in
-// their current recommendations, the engine is not recommending it, so there is
-// nothing to explain -> 404.
-//
-// THE COST, STATED PLAINLY: buildRecommendations is ~15 sequential Neon round
-// trips at a measured 250-450 ms each (architecture.md 5.6), so this endpoint's
-// database work dominates its AI work by roughly ten to one. Rejected
-// alternatives and the named upgrade path are in architecture.md 7.
-//
-// OWNERSHIP: this is the one AI route that touches user state, and it is scoped
-// the same way as everything else in the project — req.userId goes INTO the
-// pipeline, so another user's recommendation list is never built. The 404 is
-// therefore the ownership boundary as well as the "not recommended" answer.
-// ---------------------------------------------------------------------------
+// Cost: buildRecommendations is ~15 sequential Neon round trips, so this endpoint's
+// database work dominates its AI work by roughly ten to one.
 router.post(
   "/explain",
   requireAuth,
@@ -185,9 +141,8 @@ router.post(
         .json({ error: "That problem is not in your current recommendations" });
     }
 
-    // Every field below comes from the engine's own output. Nothing from the
-    // request body reaches the prompt except the problemId, which was used only
-    // to look up a row and never appears in the text we send.
+    // Every field comes from the engine's own output. Nothing from the request body
+    // reaches the prompt except problemId, which is used only to look up a row.
     const problem: PromptProblem = {
       title: recommendation.title,
       provider: recommendation.provider,
@@ -209,27 +164,15 @@ router.post(
   })
 );
 
-// ---------------------------------------------------------------------------
-// POST /api/ai/hint  { problemId } -> { hint }
+// Problem is SHARED reference data, not user-owned, so any authenticated user may
+// legitimately ask about any problem. There is NO IDOR here and deliberately no
+// ownership branch - inventing one would imply a per-user relationship that does not
+// exist.
 //
-// OWNERSHIP, STATED SO NOBODY ADDS A CHECK THAT IS NOT NEEDED: Problem is
-// SHARED REFERENCE DATA (architecture.md 2.2), not user-owned. Two users who
-// solved the same problem point at the same row. Any authenticated user may
-// legitimately ask about any problem, so there is NO IDOR here and no ownership
-// branch to write. This route touches no user state at all — it reads one
-// Problem row and its topics, and that is the whole query.
-//
-// WHAT THE HINT CAN AND CANNOT BE. We do not store problem statements
-// (schema.prisma: title, url, difficultyRaw, difficultyBand, topics — no text),
-// so a hint is generated from title + topics + difficulty alone and is
-// necessarily APPROACH-LEVEL rather than problem-specific.
-//
-// Fetching LeetCode's statement live was considered and rejected: it would
-// spend the wrapper's 120-requests-per-HOUR quota (session-handoff trap 23 — a
-// quota, not a rate, so spacing cannot buy budget back) on a cosmetic feature,
-// starving the actual data import that depends on it. It would also work for
-// LeetCode and not for Codeforces, whose API returns no statement at all.
-// ---------------------------------------------------------------------------
+// We store no problem statements, so a hint is generated from title + topics +
+// difficulty alone and is necessarily approach-level. Fetching LeetCode's statement
+// live was rejected: it would spend the wrapper's 120-per-hour quota on a cosmetic
+// feature, and it would work for LeetCode and not for Codeforces.
 router.post(
   "/hint",
   requireAuth,
@@ -261,9 +204,7 @@ router.post(
       provider: found.provider,
       difficultyRaw: found.difficultyRaw,
       difficultyBand: found.difficultyBand,
-      // Sorted for the same reason recommend.ts sorts them: the same problem
-      // should always produce the same prompt, so two identical requests differ
-      // only by the model's own non-determinism and not by ours.
+      // Sorted so two identical requests differ only by the model's non-determinism.
       topics: found.problemTopics.map((link) => link.topic.name).sort(),
     };
 
