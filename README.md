@@ -1,6 +1,6 @@
 # DSA/CP TRAINER — AI-Powered Training Platform
 
-### **`v1.0`** · [🔗 Live App](https://dsa-cp-trainer.vercel.app)
+### **`v1.0`** · [Live App](https://dsa-cp-trainer.vercel.app)
 A personalized learning platform for Data Structures & Algorithms and Competitive Programming. It imports your real activity from **LeetCode** and **Codeforces**, derives per-topic mastery from your solve history, and deterministically recommends what to solve next — weak topics first, at the right difficulty, with spaced repetition for problems you've already solved.
 
 **The recommendation engine is pure backend logic with no AI.** It is deterministic: the same inputs always produce the same recommendations. AI is layered on top for hints and explanations only — it never decides what you should solve.
@@ -75,20 +75,6 @@ User's solve history (LeetCode + Codeforces)
 
 ---
 
-## Project Status
-
-| Module | Status | Description |
-|---|---|---|
-| 1. Schema | ✅ Done | 9 models, 4 enums, migrated to Neon, 32 topics seeded |
-| 2. Auth | ✅ Done | Register/login/logout/me + requireAuth middleware |
-| 3. Recommendation Engine | ✅ Done | Mastery formula, spaced repetition, 4-stage pipeline |
-| 4. Codeforces Integration | ✅ Done | Official API — global problem catalog, submissions, rating history |
-| 5. LeetCode Integration | ✅ Done | Community wrapper — problem catalog (with difficulty gap-fill), submissions, tag mapping |
-| 6. AI Layer | ✅ Done | Hints & explanations via Groq — per-user rate limiting, structured JSON, fail-soft |
-| 7. Frontend | ✅ Done | 5 pages over the existing API — no new endpoints, no schema changes |
-
----
-
 ## Data Model
 
 ```
@@ -115,38 +101,38 @@ Problem ─→ ProblemTopic ←─ Topic
 | `POST` | `/api/auth/register` | — | Create account + set cookie |
 | `POST` | `/api/auth/login` | — | Authenticate + set cookie |
 | `POST` | `/api/auth/logout` | — | Clear cookie |
-| `GET` | `/api/auth/me` | ✅ | Current user profile |
+| `GET` | `/api/auth/me` | required | Current user profile |
 
 ### Recommendation Engine
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/recommendations` | ✅ | Ranked problem list with reason strings |
-| `GET` | `/api/mastery` | ✅ | Topic mastery — weak, strong, unknown separated |
-| `GET` | `/api/revision/due` | ✅ | Spaced-repetition items due now |
-| `POST` | `/api/revision/:problemId/review` | ✅ | Mark reviewed, advance interval |
-| `POST` | `/api/mastery/recompute` | ✅ | Rebuild mastery from current solve data |
+| `GET` | `/api/recommendations` | required | Ranked problem list with reason strings |
+| `GET` | `/api/mastery` | required | Topic mastery — weak, strong, unknown separated |
+| `GET` | `/api/revision/due` | required | Spaced-repetition items due now |
+| `POST` | `/api/revision/:problemId/review` | required | Mark reviewed, advance interval |
+| `POST` | `/api/mastery/recompute` | required | Rebuild mastery from current solve data |
 
 ### Codeforces Integration (`/api/integrations/codeforces`)
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/api/integrations/codeforces/link` | ✅ | Validate a handle and link it |
-| `POST` | `/api/integrations/codeforces/sync` | ✅ | Import submissions + rating history, then recompute mastery |
-| `GET` | `/api/integrations/codeforces/status` | ✅ | Sync state read from our DB, never from upstream |
-| `DELETE` | `/api/integrations/codeforces/link` | ✅ | Unlink and purge imported solve history |
+| `POST` | `/api/integrations/codeforces/link` | required | Validate a handle and link it |
+| `POST` | `/api/integrations/codeforces/sync` | required | Import submissions + rating history, then recompute mastery |
+| `GET` | `/api/integrations/codeforces/status` | required | Sync state read from our DB, never from upstream |
+| `DELETE` | `/api/integrations/codeforces/link` | required | Unlink and purge imported solve history (`409` while a sync is running) |
 
 ### LeetCode Integration (`/api/integrations/leetcode`)
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/api/integrations/leetcode/link` | ✅ | Validate a username and link it |
-| `POST` | `/api/integrations/leetcode/sync` | ✅ | Import submissions, then recompute mastery |
-| `GET` | `/api/integrations/leetcode/status` | ✅ | Sync state read from our DB, never from upstream |
-| `DELETE` | `/api/integrations/leetcode/link` | ✅ | Unlink and purge imported solve history |
+| `POST` | `/api/integrations/leetcode/link` | required | Validate a username and link it |
+| `POST` | `/api/integrations/leetcode/sync` | required | Import submissions, then recompute mastery |
+| `GET` | `/api/integrations/leetcode/status` | required | Sync state read from our DB, never from upstream |
+| `DELETE` | `/api/integrations/leetcode/link` | required | Unlink and purge imported solve history (`409` while a sync is running) |
 
 ### AI Layer (`/api/ai`)
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/api/ai/explain` | ✅ | Explain *why* a problem was recommended (engine reason → natural language) |
-| `POST` | `/api/ai/hint` | ✅ | Topic-level hint for a problem (approach nudge, not a solution) |
+| `POST` | `/api/ai/explain` | required | Explain *why* a problem was recommended (engine reason → natural language) |
+| `POST` | `/api/ai/hint` | required | Topic-level hint for a problem (approach nudge, not a solution) |
 
 > **AI endpoints are rate-limited** — 6 requests per user per rolling minute, protecting the shared Groq token budget. Returns `429` with a truthful `Retry-After` header when exceeded.
 
@@ -210,15 +196,15 @@ npm run dev          # http://localhost:3000
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
-| `JWT_SECRET` | ✅ | — | Signing key for auth tokens (fail-fast if missing) |
-| `PORT` | — | `5000` | Server port |
-| `FRONTEND_URL` | — | `http://localhost:3000` | CORS origin |
-| `NODE_ENV` | — | `development` | Environment |
-| `GROQ_API_KEY` | — | — | Groq API key (fail-soft: server boots without it, AI returns 503) |
-| `GROQ_MODEL` | — | `openai/gpt-oss-120b` | Model for AI layer (configurable, not hardcoded) |
-| `GROQ_BASE_URL` | — | `https://api.groq.com/openai/v1` | Override for local stub testing |
-| `LEETCODE_API_URL` | — | `https://alfa-leetcode-api.onrender.com` | Community wrapper URL (self-host via Docker if needed) |
+| `DATABASE_URL` | yes | — | PostgreSQL connection string |
+| `JWT_SECRET` | yes | — | Signing key for auth tokens (fail-fast if missing) |
+| `PORT` | no | `5000` | Server port |
+| `FRONTEND_URL` | no | `http://localhost:3000` | CORS origin |
+| `NODE_ENV` | no | `development` | Environment |
+| `GROQ_API_KEY` | no | — | Groq API key (fail-soft: server boots without it, AI returns 503) |
+| `GROQ_MODEL` | no | `openai/gpt-oss-120b` | Model for AI layer (configurable, not hardcoded) |
+| `GROQ_BASE_URL` | no | `https://api.groq.com/openai/v1` | Override for local stub testing |
+| `LEETCODE_API_URL` | no | `https://alfa-leetcode-api.onrender.com` | Community wrapper URL (self-host via Docker if needed) |
 
 ### Development Commands
 
@@ -339,7 +325,12 @@ and a bypassable verification flow would be worse than an honest gap.
 - **CSRF protection** — Origin-header check on all state-changing requests, fails closed
 - **Query-scoped ownership** — `userId` goes into WHERE clauses; other users' data is never fetched
 - **Prisma select allowlists** — password hash is never included in API responses
-- **AI prompt injection hardened** — engine reasons are server-derived, never from request body; rate limiting caps abuse
+- **AI prompt inputs are server-derived** — `/api/ai/explain` re-runs the real pipeline to obtain
+  the engine's reason rather than accepting one from the request body, so a caller cannot put
+  arbitrary text into the prompt. Titles come from the providers rather than from users, but
+  Codeforces gym contests are user-creatable, so titles are collapsed to a single line and
+  length-bounded before they reach the model. The prompt carries no secrets, and the output is
+  two sentences shown only to the caller.
 
 ---
 
