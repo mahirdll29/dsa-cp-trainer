@@ -76,7 +76,14 @@ export async function syncRevisionSchedule(
   return result.count;
 }
 
-export async function getDueRevisions(userId: string, now: Date = new Date()) {
+// `limit` exists because buildRecommendations only ever uses the first three, while
+// GET /api/revision/due legitimately wants them all. Without it the engine pulls every
+// due item for the user, each with its problem and topic links, to discard all but 3.
+export async function getDueRevisions(
+  userId: string,
+  now: Date = new Date(),
+  limit?: number
+) {
   return prisma.revisionItem.findMany({
     // userId is IN the where clause - the scoping is the query, not a check after it.
     where: { userId, dueAt: { lte: now } },
@@ -96,6 +103,7 @@ export async function getDueRevisions(userId: string, now: Date = new Date()) {
     },
     // problemId breaks ties so items sharing a dueAt never come back in arbitrary order.
     orderBy: [{ dueAt: "asc" }, { problemId: "asc" }],
+    take: limit,
   });
 }
 

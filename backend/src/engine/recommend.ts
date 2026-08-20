@@ -179,8 +179,8 @@ export async function buildRecommendations(
   // Stage 1: due revisions. The one stage that recommends already-solved problems,
   // because a revision item IS a solved problem - which is why the exclusion rule is
   // scoped to the other stages rather than being violated here.
-  const dueRevisions = await getDueRevisions(userId, now);
-  for (const item of dueRevisions.slice(0, MAX_REVISIONS)) {
+  const dueRevisions = await getDueRevisions(userId, now, MAX_REVISIONS);
+  for (const item of dueRevisions) {
     if (remaining() <= 0) break;
     add(item.problem, "due for revision");
   }
