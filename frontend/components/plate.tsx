@@ -3,45 +3,19 @@
 import { motion } from "motion/react";
 import { DRAW, INSTANT, ROW_STAGGER, useReducedMotion } from "@/lib/motion";
 
-// ---------------------------------------------------------------------------
-// PLATE I — THE SPREAD
+// PLATE I - a hand-written SVG of one real user's Spread, used on the auth pages.
 //
-// The one deliberately beautiful object in this app, and it is on /login and
-// /register because those are the only two screens with no data of their own.
+// The numbers are MEASURED, not invented: they are a real profile from this project's
+// database. A marketing illustration with plausible-looking bars would misrepresent
+// the product on the first screen a visitor sees, and this is the one place where a
+// reader cannot yet check the claim for themselves.
 //
-// IT IS NOT A MOCK-UP. Every bar length below is a real mastery score, and the
-// thirteen dotted rows are thirteen topics that genuinely have no data —
-// measured from the verified Codeforces account (543 UserProblem rows, 19
-// topics with evidence). Someone who knows the engine is reading a true
-// measurement; everyone else sees an abstract composition. The product proves
-// its own claim before the visitor has typed anything.
-//
-// WHY SVG RATHER THAN AN IMAGE: it inherits the theme's custom properties, so
-// the plate flips between the light and dark registers with the rest of the app
-// and needs no second asset; it stays crisp at any size; and it costs no
-// network request.
-//
-// THE TWO CALIBRATION MARKS ARE BOTH REAL ENGINE CONSTANTS, not decoration
-// borrowed from the look of scientific diagrams:
-//
-//   NEUTRAL   0.50  — the prior. `mastery = 0.5 + (successRate - 0.5) x
-//                     confidence`, so the score is centred here BY
-//                     CONSTRUCTION, and a bar has to grow out of it rather
-//                     than out of zero. Growing from zero would assert
-//                     "fraction of a syllabus completed", which this number is
-//                     emphatically not.
-//   THRESHOLD 0.60  — WEAK_THRESHOLD in engine/mastery.ts. Everything left of
-//                     the dashed line is what the engine calls weak. Drawing it
-//                     is what makes the weak/strong split legible instead of
-//                     looking like an arbitrary colour choice.
-// ---------------------------------------------------------------------------
+// Hand-written rather than generated because it renders before any session exists, so
+// there is no data to fetch and nothing to authenticate with.
 
 type Row = { slug: string; score: number; weak: boolean };
 
-// Measured, weakest first. The two "weak" topics score 0.5333 on a PERFECT 2/2
-// record — which is the smoothing doing its job: two data points is not enough
-// evidence to believe anyone is strong, whatever the record says. That is the
-// single most instructive row on the plate.
+// Measured, weakest first.
 const MEASURED: Row[] = [
   { slug: "recursion", score: 0.5333, weak: true },
   { slug: "shortest-path", score: 0.5333, weak: true },
@@ -64,10 +38,7 @@ const MEASURED: Row[] = [
   { slug: "math", score: 0.9783, weak: false },
 ];
 
-// Thirteen topics with no evidence at all. They keep their full row, their full
-// width and their place in the sequence — they are not shortened, not faded
-// out, and above all not drawn at zero length. A row at zero would say "this
-// person is terrible at tries"; the truth is that nobody has ever asked.
+// Thirteen topics with no evidence at all. They keep the em dash, never a zero.
 const UNMEASURED = [
   "arrays",
   "backtracking",

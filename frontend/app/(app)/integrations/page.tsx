@@ -3,21 +3,12 @@
 import { SyncPanel } from "@/components/sync-panel";
 import { useIntegrationsVersion } from "@/lib/integrations-context";
 
-// ---------------------------------------------------------------------------
-// ACCOUNTS — the page everything else depends on.
+// Nothing in this app has data until a judge is linked, so this is the first stop for
+// every new user.
 //
-// Nothing in this app has data until a judge is linked, so this is the first
-// stop for every new user and the only place the two providers are managed.
-//
-// WHAT UNLINKING ACTUALLY DOES, said out loud on the page rather than buried in
-// a confirm dialog: it deletes that provider's imported solve history and
-// rebuilds mastery from what is left. That is not over-caution — leaving the
-// data behind would let someone link handle A, sync, unlink, link handle B, and
-// end up with one mastery profile built from two different people's histories,
-// permanently and invisibly. The deletion is recoverable (re-link and re-sync
-// restores it, and the revision ladder is kept), which is exactly why it is the
-// right trade. A user deserves to know that before they click.
-// ---------------------------------------------------------------------------
+// What unlinking does is said out loud on the page rather than buried in a confirm
+// dialog: leaving the data behind would let someone link handle A, sync, unlink, link
+// handle B, and end up with one mastery profile built from two people's histories.
 
 export default function IntegrationsPage() {
   const { changed } = useIntegrationsVersion();

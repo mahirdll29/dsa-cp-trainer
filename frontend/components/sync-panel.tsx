@@ -8,25 +8,13 @@ import { api, ApiError } from "@/lib/api";
 import { absoluteTime, relativeTime } from "@/lib/format";
 import type { IntegrationStatus, LinkedAccount, SyncResult } from "@/lib/types";
 
-// ---------------------------------------------------------------------------
-// ONE PROVIDER'S PANEL — link, sync, unlink, and the failure paths.
+// Syncs are slow and they fail, and this component is designed for that rather than
+// around it. Codeforces holds the connection 13-28s; the LeetCode wrapper runs on a
+// free tier that cold-starts in 30-60s.
 //
-// SYNCS ARE SLOW AND THEY FAIL, AND THIS COMPONENT IS DESIGNED FOR THAT RATHER
-// THAN AROUND IT. Measured on the backend:
-//
-//   Codeforces  POST /sync holds the connection 13-28s (a full re-read of the
-//               user's entire submission history, plus ~5s of mandated API
-//               spacing, plus the mastery recompute)
-//   LeetCode    the community wrapper runs on a free tier that COLD-STARTS in
-//               30-60s, so a first call can take a minute before it does
-//               anything at all
-//
-// A spinner is the wrong answer to that. We cannot know a percentage — the
-// endpoint is a single synchronous POST with no progress channel — so instead
-// we show the two things we genuinely know: HOW LONG THIS HAS BEEN RUNNING, and
-// HOW LONG IT USUALLY TAKES. That turns "is this broken?" into "no, it is 14
-// seconds into a 13-28 second job".
-// ---------------------------------------------------------------------------
+// A spinner is the wrong answer. We cannot know a percentage - the endpoint is a
+// single synchronous POST with no progress channel - so we show the two things we do
+// know: how long this has been running, and how long it usually takes.
 
 type ProviderKey = "codeforces" | "leetcode";
 
@@ -45,8 +33,7 @@ const META: Record<
     tag: "LC",
     field: "LeetCode username",
     expectation: "LeetCode syncs usually take 15–60 seconds.",
-    // Stated up front rather than discovered as a hang. LeetCode has no
-    // official API; the community wrapper this project uses sleeps when idle.
+    // Stated up front rather than discovered as a hang.
     note: "LeetCode has no official API, so this goes through a community service that sleeps when idle. The first sync of the day can take a minute to wake it up.",
   },
 };
@@ -70,9 +57,8 @@ export function SyncPanel({
 
   const base = `/api/integrations/${provider}`;
 
-  // 404 IS "NOTHING LINKED", NOT AN ERROR. It is the most common response this
-  // endpoint gives — most users have linked nothing — and treating it as a
-  // failure would put a red error card on a perfectly healthy page.
+  // 404 IS "NOTHING LINKED", NOT AN ERROR - the most common response this endpoint
+  // gives, and treating it as a failure would put a red error card on a healthy page.
   async function readStatus(): Promise<IntegrationStatus | null> {
     try {
       return await api<IntegrationStatus>(`${base}/status`);
@@ -92,8 +78,7 @@ export function SyncPanel({
     }
   };
 
-  // Read the current link state on mount. The write happens after an await, so
-  // nothing is set synchronously in the effect body.
+  // The write happens after an await, so nothing is set synchronously in the effect.
   useEffect(() => {
     let live = true;
     readStatus()
@@ -115,30 +100,19 @@ export function SyncPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
-  // THE ELAPSED COUNTER. Ticks only while a sync is actually running, so
-  // nothing on this page moves when the page is idle.
-  //
-  // The counter is RESET in sync() rather than here. Resetting it in the effect
-  // would mean a synchronous state write every time `busy` changes, and the
-  // reset genuinely belongs to the event that starts the sync, not to the
-  // effect that observes it.
+  // Ticks only while a sync is running, so nothing on this page moves when it is idle.
+  // The counter is reset in sync() rather than here, because the reset belongs to the
+  // event that starts the sync, not to the effect that observes it.
   useEffect(() => {
     if (busy !== "syncing") return;
     const timer = setInterval(() => setElapsed((value) => value + 1), 1000);
     return () => clearInterval(timer);
   }, [busy]);
 
-  // POLL /status WHILE THE SYNC RUNS.
-  //
-  // POST /sync is synchronous and holds its connection for the whole import, so
-  // the POST itself tells us nothing until it finishes. GET /status is a
-  // separate cheap request against our own database, and it is what makes
-  // PENDING -> SYNCING -> COMPLETED visible while the work is happening rather
-  // than only after.
-  //
-  // It also covers the case the POST cannot: if the browser loses the response
-  // — tab backgrounded on a flaky connection, laptop sleeping — the import is
-  // still running on the server, and polling is how we learn how it ended.
+  // POST /sync is synchronous and tells us nothing until it finishes, so GET /status -
+  // a cheap read of our own database - is what makes PENDING -> SYNCING -> COMPLETED
+  // visible while the work happens. It also covers the case the POST cannot: if the
+  // browser loses the response, the import is still running on the server.
   useEffect(() => {
     if (busy !== "syncing") return;
     const poll = setInterval(() => {
@@ -160,10 +134,7 @@ export function SyncPanel({
         method: "POST",
         body: { handle },
       });
-      // THE STORED HANDLE IS THE PROVIDER'S CANONICAL CASING, not what was
-      // typed — link "MAHIRDLL" and Codeforces reports "mahirdll". Rendering
-      // the response rather than the input is what keeps our display agreeing
-      // with the account that was actually linked.
+      // The stored handle is the provider's canonical casing, not what was typed.
       setStatus({
         handle: linkedAccount.handle,
         syncStatus: linkedAccount.syncStatus,
@@ -188,16 +159,15 @@ export function SyncPanel({
       onChanged();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
-        // "A sync is already in progress" is not a failure — another tab or an
-        // earlier attempt is doing the work. Keep polling instead of shouting.
+        // "A sync is already in progress" is not a failure - another tab is doing the work.
         setError(null);
       } else {
         setError(caught instanceof ApiError ? caught.message : "The sync didn't finish.");
       }
     } finally {
       setBusy(null);
-      // Always re-read: the POST may have failed, and only /status knows
-      // whether the backend recorded FAILED and left lastSyncedAt alone.
+      // Always re-read: the POST may have failed, and only /status knows whether the
+      // backend recorded FAILED and left lastSyncedAt alone.
       void refresh();
     }
   }

@@ -5,32 +5,16 @@ import { useRouter } from "next/navigation";
 import { api, ME_OPTIONS, setUnauthorizedHandler } from "./api";
 import type { User } from "./types";
 
-// ---------------------------------------------------------------------------
-// AUTH STATE — a three-state machine, and no auth library.
+// Authenticated data is fetched IN THE BROWSER, and that is forced rather than
+// chosen: the backend sets its cookie on its own origin with no Domain attribute,
+// making it HOST-ONLY. The Next.js server process cannot see it, so no Server
+// Component can read it and no Route Handler can forward it. There is no SSR of
+// protected data anywhere in this app.
 //
-// WHY AUTHENTICATED DATA IS FETCHED IN THE BROWSER, WHICH IS THE WHOLE REASON
-// THIS FILE IS "use client":
-//
-// The backend sets its `token` cookie on ITS OWN ORIGIN (localhost:5000 in dev)
-// with no Domain attribute, which makes it a HOST-ONLY cookie. The browser will
-// not send it to localhost:3000, and the Next.js server process — a different
-// machine entirely in production — has no access to it at all. So a Server
-// Component cannot read it, and a Route Handler cannot forward it.
-//
-// That is not a limitation of Next.js; it is what host-only means. The
-// consequence is architectural and it is the same in production (Vercel ->
-// Railway, SameSite=None + Secure): EVERY AUTHENTICATED REQUEST IS MADE FROM
-// THE BROWSER. No SSR of protected data anywhere in this app.
-//
-// WHY THREE STATES AND NOT A BOOLEAN. There is no way to read an httpOnly
-// cookie from JavaScript — that is the entire point of httpOnly — so "am I
-// logged in" is not a value we hold, it is a QUESTION WE ASK: does GET
-// /api/auth/me return 200? Asking takes a network round trip, so there is a
-// real window where the answer is genuinely unknown. A boolean would have to
-// lie during that window (defaulting to false flashes the login screen at a
-// logged-in user; defaulting to true flashes the app at a stranger). Modelling
-// it as `loading` lets every consumer render a deliberate third thing.
-// ---------------------------------------------------------------------------
+// Three states, not a boolean: "am I logged in" is not a value we hold but a question
+// we ask, and the round trip means there is a real window where the answer is
+// unknown. A boolean would have to lie during it - false flashes the login screen at
+// a signed-in user, true flashes the app at a stranger.
 
 export type AuthState =
   | { status: "loading"; user: null }
@@ -45,26 +29,17 @@ type AuthContextValue = AuthState & {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// CONTEXT IS SUFFICIENT HERE, and naming why is the point of this comment.
-// The shared state is one user object, read by four components and written by
-// exactly three events (sign in, register, sign out). There is no server-cache
-// invalidation, no optimistic mutation graph, no cross-page subscription. A
-// state library would add a dependency, a provider, and a set of concepts to
-// explain, in exchange for solving problems this app does not have.
+// Context is sufficient: one user object, read by four components, written by three
+// events. No server-cache invalidation and no optimistic mutation graph to manage.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading", user: null });
   const router = useRouter();
 
-  // THE PROBE, run once on mount. Arriving fresh and arriving after a reload
-  // are the same code path: we ask the server who we are.
+  // The probe, once on mount. Written as .then/.catch so the only state write happens
+  // inside an async callback - a synchronous setState in an effect body causes a
+  // cascading render, which React 19's compiler rules flag.
   //
-  // Note ME_OPTIONS — a 401 here must NOT trigger the global redirect, or
-  // /login enters a loop with itself.
-  //
-  // Written as .then/.catch rather than an awaited helper so the only state
-  // write happens inside an async callback. An effect body that calls setState
-  // synchronously causes a cascading render, and React 19's compiler rules
-  // flag it; here there is nothing to write until the request settles anyway.
+  // Note ME_OPTIONS: a 401 here must NOT trigger the global redirect.
   useEffect(() => {
     let live = true;
 
@@ -73,11 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (live) setState({ status: "authed", user });
       })
       .catch(() => {
-        // Any failure — 401, a network error, the backend being down —
-        // resolves to "not signed in". That is the honest reading: we could
-        // not establish a session, so we do not have one. A fourth "error"
-        // state would need its own screen and would tell the user nothing they
-        // could act on that the login page does not already tell them.
+        // Any failure - 401, network error, backend down - resolves to "not signed in". A
+        // fourth error state would need its own screen and tell the user nothing actionable.
         if (live) setState({ status: "anon", user: null });
       });
 
@@ -86,20 +58,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // THE GLOBAL 401 HANDLER, registered once at the top of the tree.
+  // The global 401 handler, registered once at the top of the tree, so a session that
+  // ends mid-visit drops to the login screen instead of surfacing a raw error.
   //
-  // A token expires after 7 days and can be invalidated by the user record
-  // being deleted, so a session can end mid-visit with the app already
-  // rendered. Without this, the next click would surface a raw error on an
-  // otherwise-normal page. With it, any 401 from any call drops straight to the
-  // login screen.
-  //
-  // TO BE CLEAR ABOUT WHAT THIS IS: **this is UX, not security.** Nothing here
-  // protects any data. The backend's requireAuth middleware rejects every
-  // unauthenticated request whether or not this handler exists, and someone who
-  // disables JavaScript or edits the bundle gets exactly the same 401s. The
-  // enforcement is on the server; this only stops a logged-out user staring at
-  // a broken screen.
+  // THIS IS UX, NOT SECURITY. It protects nothing: the backend rejects every
+  // unauthenticated request whether or not this exists, and someone who edits the
+  // bundle gets exactly the same 401s.
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setState({ status: "anon", user: null });
@@ -116,8 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ status: "authed", user });
   }, []);
 
-  // Registering signs you in — the backend sets the cookie on 201, so there is
-  // no second login step to perform and none to fail.
+  // Registering signs you in: the backend sets the cookie on 201.
   const register = useCallback(async (name: string, email: string, password: string) => {
     const { user } = await api<{ user: User }>("/api/auth/register", {
       method: "POST",
@@ -127,13 +90,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    // POST /api/auth/logout is deliberately NOT behind requireAuth on the
-    // backend, so this works even when the token is already expired or
-    // malformed — which is exactly when a user most wants it to.
-    //
-    // The state is cleared whether or not the call succeeds. If the network is
-    // down we cannot clear the server's cookie, but leaving the user looking
-    // signed in after they asked to leave is the worse of the two outcomes.
+    // Deliberately NOT behind requireAuth on the backend, so this works even when the
+    // token is already expired. State is cleared whether or not the call succeeds -
+    // leaving the user looking signed in after they asked to leave is the worse outcome.
     try {
       await api("/api/auth/logout", { method: "POST" });
     } finally {
@@ -150,9 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const value = useContext(AuthContext);
-  // Throwing rather than returning a default: a component reading auth outside
-  // the provider is a wiring mistake, and a silent `{ status: "anon" }` would
-  // render a plausible logged-out screen instead of reporting it.
+  // Throwing rather than defaulting: a component reading auth outside the provider is a
+  // wiring mistake, and a silent anon state would render a plausible logged-out screen.
   if (!value) throw new Error("useAuth must be used inside <AuthProvider>");
   return value;
 }
