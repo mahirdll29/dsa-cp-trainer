@@ -1,8 +1,6 @@
-// The one place this app talks to the backend, which is what makes
-// credentials:"include" structurally impossible to forget. Omitting it does not
-// throw, warn or fail - the browser just declines to attach the cookie, the request
-// arrives unauthenticated, and the symptom is "I am logged in but the app says I am
-// not", which looks like an auth bug and is a fetch bug.
+// The one place this app talks to the backend, so credentials:"include" is written
+// once and cannot be forgotten. Omitting it does not throw or warn - the browser just
+// declines to attach the cookie, and the symptom looks like an auth bug.
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
@@ -10,9 +8,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    // Propagated from the backend's Retry-After header. Surfaced rather than retried
-    // automatically: Groq's binding limit is tokens per minute, so a retry spends budget
-    // that has already run out.
+    // Surfaced rather than retried: Groq's binding limit is tokens per minute, so an
+    // automatic retry spends budget that has already run out.
     readonly retryAfterSeconds?: number
   ) {
     super(message);
@@ -75,7 +72,6 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   return data as T;
 }
 
-// GET /api/auth/me MUST bypass the redirect. Its 401 is the EXPECTED answer for a
-// signed-out visitor, not an expired session - route it through the handler and
-// /login redirects to itself forever.
+// GET /api/auth/me MUST bypass the redirect: its 401 is the expected answer for a
+// signed-out visitor, and routing it through the handler loops /login with itself.
 export const ME_OPTIONS: ApiOptions = { silent401: true };

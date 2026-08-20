@@ -1,16 +1,8 @@
 import { NextFunction, Request, Response } from "express";
 
-// CSRF protection by Origin check.
-//
-// The browser attaches a cookie based on where a request is GOING, never where it
-// came FROM, so evil.com can aim a form at our API and the victim's browser will
-// include their session cookie. SameSite normally prevents this, but production
-// needs SameSite=None to work cross-site at all, and None switches that protection
-// off completely. This is what closes that gap.
-//
-// An Origin check works because the browser sets Origin itself and page JavaScript
-// cannot forge it - fetch will not let you set it, and the browser overwrites any
-// attempt.
+// CSRF protection. Production needs SameSite=None to work cross-site at all, which
+// switches SameSite's own protection off completely; this closes that gap. It works
+// because the browser sets Origin itself and page JavaScript cannot forge it.
 
 // The same value the CORS config uses. An origin CORS allows but this rejects would
 // produce writes that fail for no visible reason.
@@ -29,10 +21,8 @@ export function requireSameOrigin(
   // Referer is the fallback for the cases that omit Origin; only its origin is compared.
   const origin = req.get("origin") ?? refererOrigin(req.get("referer"));
 
-  // FAILS CLOSED. No Origin and no Referer means we cannot prove the request did not
-  // come from another site, and "cannot prove" has to mean reject - a plain HTML form
-  // POST would otherwise walk straight through, since form posts historically omit
-  // Origin. Cost: non-browser clients (curl, Postman) must send an Origin header.
+  // FAILS CLOSED: a header-less request would otherwise let a plain HTML form POST
+  // walk straight through. Cost: curl and Postman must send an Origin header.
   if (!origin || origin !== allowedOrigin) {
     return res.status(403).json({ error: "Invalid origin" });
   }

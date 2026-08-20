@@ -1,29 +1,15 @@
 import { SyncStatus } from "@prisma/client";
 import prisma from "./prisma";
 
-// The LinkedAccount sync lock, shared by both providers.
-//
-// This is the one piece of the provider routes that was extracted, because it is the
-// one place DIVERGENCE IS A SILENT CORRECTNESS BUG: a copy-pasted version with a
-// different stale window, or one that forgot the FAILED write on the error path,
-// passes every happy-path test and then strands an account in SYNCING forever.
+// Shared by both providers: a divergent copy is a silent correctness bug.
 
-// A SYNC IS A LOCK, AND LOCKS STRAND. If the process dies mid-import nothing writes
-// COMPLETED or FAILED, the row sits at SYNCING forever, and the user can never sync
-// again - there is no timeout on a database column. So the lock has an expiry.
-//
-// One constant, both providers: two copies would drift the first time somebody tuned
-// one.
+// Locks strand. A process that dies mid-import never writes COMPLETED or FAILED, and
+// there is no timeout on a database column - so the lock needs an expiry of its own.
 const STALE_SYNC_MS = 5 * 60 * 1000;
 
-// An ATOMIC COMPARE-AND-SET, not a read-then-write. Written the obvious way ("read
-// the row; is it SYNCING? no? then set SYNCING") two requests both read "not
-// syncing" and both import - `await` yields the event loop, so single-threaded Node
-// does not close that window. Putting the condition in the WHERE clause makes the
-// DATABASE decide, and `count` reports whether we won.
-//
-// The OR is the stale-lock escape. updatedAt is @updatedAt, so writing SYNCING stamps
-// the acquisition time for free and no extra column is needed.
+// The condition lives in the WHERE clause so the DATABASE decides who wins; a
+// read-then-write here would let two requests both see "not syncing" and both import.
+// The OR is the stale-lock escape, dated by @updatedAt for free.
 export async function acquireSyncLock(
   linkedAccountId: string
 ): Promise<boolean> {

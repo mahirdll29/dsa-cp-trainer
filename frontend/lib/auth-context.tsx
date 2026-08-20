@@ -5,16 +5,12 @@ import { useRouter } from "next/navigation";
 import { api, ME_OPTIONS, setUnauthorizedHandler } from "./api";
 import type { User } from "./types";
 
-// Authenticated data is fetched IN THE BROWSER, and that is forced rather than
-// chosen: the backend sets its cookie on its own origin with no Domain attribute,
-// making it HOST-ONLY. The Next.js server process cannot see it, so no Server
-// Component can read it and no Route Handler can forward it. There is no SSR of
-// protected data anywhere in this app.
+// Authenticated data is fetched IN THE BROWSER, forced rather than chosen: the auth
+// cookie is HOST-ONLY, so the Next.js server can never see it. No SSR of protected
+// data anywhere in this app.
 //
-// Three states, not a boolean: "am I logged in" is not a value we hold but a question
-// we ask, and the round trip means there is a real window where the answer is
-// unknown. A boolean would have to lie during it - false flashes the login screen at
-// a signed-in user, true flashes the app at a stranger.
+// Three states, not a boolean: "am I logged in" is a question we ask, not a value we
+// hold, and a boolean would have to lie during the round trip.
 
 export type AuthState =
   | { status: "loading"; user: null }
@@ -58,12 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // The global 401 handler, registered once at the top of the tree, so a session that
-  // ends mid-visit drops to the login screen instead of surfacing a raw error.
-  //
-  // THIS IS UX, NOT SECURITY. It protects nothing: the backend rejects every
-  // unauthenticated request whether or not this exists, and someone who edits the
-  // bundle gets exactly the same 401s.
+  // Registered once at the top of the tree, so a session ending mid-visit drops to the
+  // login screen instead of surfacing a raw error. THIS IS UX, NOT SECURITY - the
+  // backend rejects unauthenticated requests whether or not this exists.
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setState({ status: "anon", user: null });

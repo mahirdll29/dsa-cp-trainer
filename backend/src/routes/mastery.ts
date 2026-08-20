@@ -6,11 +6,9 @@ import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
-// Ownership here differs from a typical CRUD API and is stronger. A route like
-// GET /api/reports/:id fetches the row and THEN compares owner ids - a separate
-// authorization step, and separate steps get forgotten, which is how an IDOR appears.
-// No endpoint in this module accepts a user identifier at all: req.userId goes into
-// the WHERE clause, so another user's row is never fetched in the first place.
+// No endpoint here accepts a user identifier: req.userId goes into the WHERE clause,
+// so another user's row is never fetched. The scoping IS the query, not a check after
+// it - there is no separate authorization step to forget.
 
 router.get(
   "/",
@@ -29,9 +27,8 @@ router.get(
   })
 );
 
-// TopicMastery is stored rather than computed, and any stored copy of a derived fact
-// rots unless something refreshes it. The importers call the same engine functions
-// directly; this route is the manual trigger.
+// TopicMastery is stored, and a stored derived value rots unless refreshed. The
+// importers call the same engine functions directly; this route is the manual trigger.
 router.post(
   "/recompute",
   requireAuth,

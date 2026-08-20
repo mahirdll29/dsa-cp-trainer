@@ -26,12 +26,8 @@ export const TAG_TO_TOPIC_SLUG: Readonly<Record<string, string>> = {
   "shortest paths": "shortest-path", //              293
   matrices: "matrix", //                             137
 
-  // --- Judgment calls -------------------------------------------------------
-  //
-  // These are OUR LINE, drawn by us, in exactly the same spirit as the
-  // Codeforces rating cutoffs in architecture.md 2.2 and the difficulty
-  // thresholds in engine/mastery.ts. Codeforces publishes no mapping to
-  // anybody's topic taxonomy; reasonable people would draw these elsewhere.
+  // --- Judgment calls: our line, drawn by us. CF publishes no mapping to any
+  // topic taxonomy, and reasonable people would draw these elsewhere. -------
 
   // CF's "implementation" means "no clever algorithm — just carefully code what
   // the statement describes". That is precisely what our `simulation` topic is.

@@ -7,14 +7,12 @@ import { AiProvider } from "@/lib/ai-context";
 import { IntegrationsProvider } from "@/lib/integrations-context";
 import { useAuth } from "@/lib/auth-context";
 
-// The protected shell. A route group, `(app)`, so /login and /register live outside
-// it without appearing in the URL.
+// The protected shell. A route group, `(app)`, so /login and /register live outside it
+// without appearing in the URL.
 //
-// THE REDIRECT BELOW IS UX, NOT SECURITY. It protects nothing - anyone can delete it
-// in devtools or call the API directly and get exactly the same result, because
-// requireAuth and requireSameOrigin run on the server. It exists so a signed-out
-// visitor sees a login form instead of three empty panels and a row of failed
-// requests.
+// THE REDIRECT BELOW IS UX, NOT SECURITY: requireAuth and requireSameOrigin run on the
+// server and cannot be reached from a browser. This only stops a signed-out visitor
+// staring at empty panels and failed requests.
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
   const { status } = useAuth();
@@ -24,11 +22,9 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
     if (status === "anon") router.replace("/login");
   }, [status, router]);
 
-  // "Am I signed in" is a network round trip, so there is a real moment where the
-  // answer is unknown. Rendering the app during it flashes a dashboard at a stranger;
-  // rendering the login form flashes it at someone already signed in. So we render the
-  // frame and nothing else - and no spinner, because this resolves in well under a
-  // second and the honest signal is that the page has not finished arriving.
+  // There is a real moment where "am I signed in" is unknown. Rendering either answer
+  // flashes the wrong screen at somebody, so we render the frame and nothing else - and
+  // no spinner, because a spinner says "this is taking a while" and it is not.
   if (status !== "authed") {
     return (
       <div className="bg-paper min-h-svh" aria-busy="true" aria-live="polite">

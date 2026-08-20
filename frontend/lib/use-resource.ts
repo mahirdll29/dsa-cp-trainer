@@ -46,10 +46,7 @@ export function useResource<T>(
   });
   const [nonce, setNonce] = useState(0);
 
-  // Callers pass an inline arrow, a new function identity every render, so putting it
-  // in the fetch effect's dependency array would refetch forever. A ref breaks that
-  // without pushing useCallback onto every call site.
-  //
+  // Callers pass an inline arrow, so a new identity every render would refetch forever.
   // This effect MUST be declared before the fetch effect: effects run in declaration
   // order, so the ref is current by the time the fetch effect reads it.
   const fetcherRef = useRef(fetcher);

@@ -1,20 +1,17 @@
-// The one place the project's "no rate limiting" decision is overridden, because the
-// cost here is different and measured. Elsewhere the cost of no limiting is our own
-// CPU; here it is a SHARED EXTERNAL CEILING - this Groq key allows 8,000 tokens per
-// minute, and at ~320 tokens a call about 25 calls in a minute exhausts the AI
-// feature for every user of that key, not just the one making them.
+// The one place the project's "no rate limiting" decision is overridden: the ceiling
+// here is SHARED and external. The Groq key allows 8,000 tokens/minute, so ~25 calls
+// exhaust the AI feature for every user of that key, not just the one making them.
 //
-// In-memory and per-process: it does not survive a restart, and two instances would
-// each permit the full rate. Fine at one instance, which is what this deploys.
+// In-memory and per-process, so a restart resets it and two instances would each
+// permit the full rate. Fine at one instance, which is what this deploys.
 
 // Six per user per rolling minute: at ~320 tokens a call, four concurrent users still
 // sit inside the 8,000-token budget.
 const MAX_CALLS = 6;
 const WINDOW_MS = 60_000;
 
-// A sliding window, not a fixed one. A fixed window permits a double burst across the
-// boundary - six calls at 11:59:59 and six more at 12:00:01 is twelve in two seconds,
-// all legal.
+// Sliding, not fixed: a fixed window permits twelve calls in two seconds across the
+// boundary.
 const callsByUser = new Map<string, number[]>();
 
 export type RateLimitResult =
@@ -22,8 +19,7 @@ export type RateLimitResult =
   // Seconds until the oldest call leaves the window, so it is a truthful Retry-After.
   | { allowed: false; retryAfterSeconds: number };
 
-// Records the call as well as checking it. A separate check()/record() pair would
-// invite a caller to do one and forget the other, and the failure would be silent.
+// Records as well as checks - a separate check()/record() pair would be forgotten.
 export function consumeAiRateLimit(
   userId: string,
   now: number = Date.now()

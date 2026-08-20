@@ -3,16 +3,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 
-// Is the AI switched on? Asked once, cheaply, at the top of the app.
+// Is the AI switched on? The backend fails soft, so this is that same property one
+// layer up: with no key, the Explain and Hint affordances are ABSENT rather than
+// present-and-broken.
 //
-// The backend fails soft by design: with no key it boots normally and only /api/ai/*
-// returns 503. This is that property one layer up - if the AI is off the Explain and
-// Hint affordances are ABSENT, not disabled with a tooltip and never an error toast.
-//
-// THE PROBE READS routes/ai.ts GUARD ORDER AS A CONTRACT. That route checks
-// not-configured (503) BEFORE body validation (400), so a POST with an empty body
-// answers 503 when the AI is off and 400 when it is on - without touching Groq, the
-// database, or the rate-limit budget. If that order ever changes this silently reads
+// THE PROBE READS routes/ai.ts GUARD ORDER AS A CONTRACT: that route checks
+// not-configured (503) before body validation (400), so an empty-body POST
+// distinguishes the two for free. Change that order and this silently reads
 // "available" and shows a button that fails.
 
 const AiContext = createContext<boolean>(false);
