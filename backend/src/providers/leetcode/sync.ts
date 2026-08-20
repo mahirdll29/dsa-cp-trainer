@@ -337,8 +337,10 @@ export async function syncLeetcodeCatalog(
       totals.problemsWithNoTopic += counts.problemsWithNoTopic;
     }
 
-    // Terminate on a SHORT page, never an empty one - see the clamping note above.
-    if (result.items.length < PAGE_SIZE) break;
+    // Terminate on the number of rows the API SERVED, not the number that survived
+    // validation. `items` excludes malformed rows, so one bad row in a full page makes
+    // items.length 99 and silently ends the crawl mid-catalog, reporting success.
+    if (result.items.length + result.malformed < PAGE_SIZE) break;
 
     skip += PAGE_SIZE;
   }
