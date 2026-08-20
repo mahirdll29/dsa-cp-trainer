@@ -409,11 +409,13 @@ export async function syncCodeforcesUser(
   let attempted = 0;
 
   for (const solve of aggregated.solves) {
-    if (solve.status === SolveStatus.SOLVED) solved++;
-    else attempted++;
-
     const problemId = problemIdByExternalId.get(solve.externalId);
     if (!problemId) continue; // problem row missing; the next sync picks it up
+
+    // Counted after the row is known to be writable, so the reported totals describe what
+    // was imported rather than what was seen. The LeetCode sync already does this.
+    if (solve.status === SolveStatus.SOLVED) solved++;
+    else attempted++;
 
     const existing = existingByProblemId.get(problemId);
     if (!existing) {
