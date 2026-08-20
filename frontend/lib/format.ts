@@ -110,6 +110,3 @@ export function providerTag(provider: "CODEFORCES" | "LEETCODE"): string {
   return provider === "CODEFORCES" ? "CF" : "LC";
 }
 
-export function providerName(provider: "CODEFORCES" | "LEETCODE"): string {
-  return provider === "CODEFORCES" ? "Codeforces" : "LeetCode";
-}

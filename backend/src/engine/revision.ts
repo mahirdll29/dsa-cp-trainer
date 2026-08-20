@@ -1,7 +1,7 @@
 import { SolveStatus } from "@prisma/client";
 import prisma from "../lib/prisma";
 
-export const REVISION_INTERVALS = [1, 3, 7, 14, 30] as const;
+const REVISION_INTERVALS = [1, 3, 7, 14, 30] as const;
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -13,26 +13,6 @@ function addDays(from: Date, days: number): Date {
 function intervalForRepetition(repetitionCount: number): number {
   const index = Math.min(repetitionCount, REVISION_INTERVALS.length - 1);
   return REVISION_INTERVALS[index];
-}
-
-export async function scheduleRevisionForSolve(
-  userId: string,
-  problemId: string,
-  now: Date = new Date()
-) {
-  return prisma.revisionItem.upsert({
-    where: { userId_problemId: { userId, problemId } },
-    // Empty update on purpose: an existing item means the user is partway up the ladder,
-    // and a re-run import must not knock them back to day one.
-    update: {},
-    create: {
-      userId,
-      problemId,
-      repetitionCount: 0,
-      intervalDays: intervalForRepetition(0),
-      dueAt: addDays(now, intervalForRepetition(0)),
-    },
-  });
 }
 
 // Ensures every solved problem has a revision item. Both importers call this after

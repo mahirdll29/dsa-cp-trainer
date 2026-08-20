@@ -18,7 +18,7 @@ const HARD_FLOOR = 0.7; //      >= 0.70       -> HARD, between the two -> MEDIUM
 // A topic we know nothing about gets an EASY probe: enough to produce a first signal.
 export const EXPLORATORY_BAND: DifficultyBand = DifficultyBand.EASY;
 
-export function masteryToBand(masteryScore: number): DifficultyBand {
+function masteryToBand(masteryScore: number): DifficultyBand {
   if (masteryScore < EASY_CEILING) return DifficultyBand.EASY;
   if (masteryScore < HARD_FLOOR) return DifficultyBand.MEDIUM;
   return DifficultyBand.HARD;

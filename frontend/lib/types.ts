@@ -79,11 +79,6 @@ export type RevisionItem = {
   problem: RevisionProblem;
 };
 
-// The review response's `problem` include omits problemTopics, hence the Omit.
-export type ReviewedItem = Omit<RevisionItem, "problem" | "userId"> & {
-  problem: Omit<RevisionProblem, "problemTopics">;
-};
-
 // src/routes/{codeforces,leetcode}.ts - both providers expose the same four shapes.
 export type IntegrationStatus = {
   handle: string;
