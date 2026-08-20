@@ -8,6 +8,7 @@ import leetcodeRoutes from "./routes/leetcode";
 import masteryRoutes from "./routes/mastery";
 import recommendationRoutes from "./routes/recommendations";
 import revisionRoutes from "./routes/revision";
+import sessionRoutes from "./routes/sessions";
 import { requireSameOrigin } from "./middleware/requireSameOrigin";
 
 const app = express();
@@ -38,6 +39,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mastery", masteryRoutes);
 app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/revision", revisionRoutes);
+app.use("/api/sessions", sessionRoutes);
 app.use("/api/integrations/codeforces", codeforcesRoutes);
 app.use("/api/integrations/leetcode", leetcodeRoutes);
 // The AI layer is an ordinary sibling of the rest of the API, not something the
