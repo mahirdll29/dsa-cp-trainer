@@ -149,6 +149,15 @@ Problem ─→ ProblemTopic ←─ Topic
 
 > **AI endpoints are rate-limited** — 6 requests per user per rolling minute, protecting the shared Groq token budget. Returns `429` with a truthful `Retry-After` header when exceeded.
 
+### Similar Problems (`/api/problems`)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/problems/similar` | required | Paste a problem URL, get problems built on the same ideas. `?url=` required, `?bands=EASY,MEDIUM` and `?limit=1..50` optional |
+
+> **Similarity is IDF-weighted Jaccard over topic sets, not a model call.** Each shared topic is weighted by `ln(1 + N/df)`, so a shared `queue` (47 problems) counts for roughly four times a shared `math` (4,036). Ranking is score, then rating distance between two rated problems, then problem id — a total order, so identical requests return identical bytes. Difficulty is filtered on the normalized band; the two providers' rating scales are never mapped onto each other.
+
+> A URL that cannot be parsed is `400`, one parsed but not in the catalog is `404` echoing the parsed id, and one in the catalog carrying no topics is `422`. An empty result set with a valid source is a normal `200`.
+
 All non-GET requests are protected by an Origin-header CSRF check (registered globally).
 
 ---
@@ -353,7 +362,6 @@ This is **v1** — the core loop (import → measure → recommend → review) i
 
 | Feature | Description |
 |---|---|
-| **Similar Problem Finder** | Paste any LeetCode/Codeforces problem URL and get similar problems at your desired difficulty range — powered by topic and structural similarity matching across the full catalog |
 | **Contest Mode** | Timed practice sets that simulate real contest conditions with problems calibrated to your current rating |
 | **Progress Analytics** | Visualize your mastery trajectory over time — weekly trends, topic breakthrough detection, and streak tracking |
 | **Community Problem Lists** | Curated problem sets shared by users, filterable by topic, difficulty, and target contest level |
