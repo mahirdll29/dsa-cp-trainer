@@ -62,14 +62,21 @@ export function PracticeSession({
 
   // A refetch produces a new session object, which re-seeds every counter from the
   // server's answer rather than letting the local ones drift across a reload.
-  useEffect(() => {
+  //
+  // Done DURING RENDER rather than in an effect. An effect runs after paint, so the
+  // frame between a refetch landing and the effect firing shows the old countdown -
+  // briefly displaying a number the server has already superseded. React re-renders
+  // this component before touching the DOM, so nothing stale is ever painted.
+  const [seededFrom, setSeededFrom] = useState(session);
+  if (session !== seededFrom) {
+    setSeededFrom(session);
     setElapsed(session.elapsedSeconds);
     setGate(session.gate);
     setCountdown(
       session.gate.state === "COOLDOWN" ? session.gate.secondsRemaining : 0
     );
     setUnavailable(null);
-  }, [session]);
+  }
 
   useEffect(() => {
     const timer = setInterval(() => {
