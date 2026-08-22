@@ -173,3 +173,34 @@ export type SessionSummary = {
   problem: SessionProblem;
   hintCount: number;
 };
+
+// src/routes/problems.ts - the similar problem finder (Module 10).
+//
+// `score` arrives in [0,1], already rounded to 4dp, and `results` arrives in the
+// order it renders. The client computes no score, sorts nothing and filters nothing.
+export type SimilarProblem = {
+  problemId: string;
+  title: string;
+  url: string;
+  provider: Provider;
+  difficultyRaw: string;
+  difficultyBand: DifficultyBand;
+  topics: string[];
+};
+
+// An intersection rather than a rewritten shape: these two come from the SAME route
+// and the result genuinely is the source plus three fields, so letting them drift
+// would be a bug rather than a rename.
+export type SimilarResult = SimilarProblem & {
+  score: number;
+  sharedTopics: string[];
+  solved: boolean;
+};
+
+export type SimilarResponse = {
+  source: SimilarProblem;
+  // Echoed back so the page can say what it actually filtered on, which is not the
+  // same as what was asked for when nothing was asked for.
+  bands: DifficultyBand[];
+  results: SimilarResult[];
+};
