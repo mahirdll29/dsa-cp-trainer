@@ -1,8 +1,16 @@
 import { Router } from "express";
-import { ContestStatus, Prisma, SessionStatus } from "@prisma/client";
+import {
+  ContestStatus,
+  Prisma,
+  Provider,
+  SessionStatus,
+} from "@prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
 import prisma from "../lib/prisma";
 import { requireAuth } from "../middleware/requireAuth";
+import { acquireSyncLock, completeSync, failSync } from "../lib/syncLock";
+import { syncCodeforcesUser } from "../providers/codeforces/sync";
+import { syncLeetcodeUser } from "../providers/leetcode/sync";
 import {
   ContestSelectionError,
   DURATION_MINUTES,
@@ -390,6 +398,117 @@ router.post(
     // POST /:id/reconcile is the explicit next step.
     return res.json({
       contest: presentContest({ ...contest, status, finalizedAt }),
+    });
+  })
+);
+
+router.post(
+  "/:id/reconcile",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!req.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    // Deliberately NOT loadContest. This is the one read that must not lazily finalize,
+    // because it has to be able to say "finalize first" about a contest whose clock has
+    // run out but whose row is still ACTIVE.
+    const contest = await prisma.contestSession.findFirst({
+      where: { id: req.params.id.trim(), userId: req.userId },
+      select: CONTEST_SELECT,
+    });
+
+    if (!contest) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+
+    if (contest.status === ContestStatus.ACTIVE) {
+      return res
+        .status(409)
+        .json({ error: "Finalize the contest before reconciling" });
+    }
+
+    const accounts = await prisma.linkedAccount.findMany({
+      where: { userId: req.userId },
+      select: { id: true, provider: true, handle: true },
+    });
+
+    let lockedOut = false;
+
+    for (const account of accounts) {
+      // A held lock means a sync is already running. Skipping is correct: the contest
+      // is finalized and its claims are recorded either way.
+      if (!(await acquireSyncLock(account.id))) {
+        lockedOut = true;
+        continue;
+      }
+
+      try {
+        if (account.provider === Provider.CODEFORCES) {
+          await syncCodeforcesUser(req.userId, account.id, account.handle);
+        } else {
+          await syncLeetcodeUser(req.userId, account.handle);
+        }
+        await completeSync(account.id);
+      } catch (error) {
+        // A provider failure never fails this request. The contest is already over and
+        // nothing the user did is at stake.
+        await failSync(account.id);
+        console.error(
+          `[contest] reconcile sync failed for ${account.provider} ${account.handle}:`,
+          error
+        );
+      }
+    }
+
+    // UserProblem.solvedAt is the provider's own submission time, never our import
+    // time, which is the only reason this comparison means anything.
+    const solves = await prisma.userProblem.findMany({
+      where: {
+        userId: req.userId,
+        problemId: { in: contest.problems.map((entry) => entry.problem.id) },
+        solvedAt: { gte: contest.startedAt, lte: contest.endsAt },
+      },
+      select: { problemId: true, solvedAt: true },
+    });
+
+    // One update per confirmed problem, capped at the contest size. updateMany cannot
+    // write a different timestamp per row, and this project stays out of $queryRaw.
+    for (const solve of solves) {
+      await prisma.contestProblem.update({
+        where: {
+          contestSessionId_problemId: {
+            contestSessionId: contest.id,
+            problemId: solve.problemId,
+          },
+        },
+        data: { confirmedSolvedAt: solve.solvedAt },
+      });
+    }
+
+    // A lock we could not take means the data may still be stale, so this pass does not
+    // get to claim it ran. Null keeps the results honest and the user can retry.
+    const reconciledAt = lockedOut ? null : new Date();
+    if (reconciledAt) {
+      await prisma.contestSession.update({
+        where: { id: contest.id },
+        data: { reconciledAt },
+      });
+    }
+
+    const fresh = await prisma.contestSession.findFirst({
+      where: { id: contest.id, userId: req.userId },
+      select: CONTEST_SELECT,
+    });
+
+    if (!fresh) {
+      return res.status(404).json({ error: "Contest not found" });
+    }
+
+    return res.json({
+      contest: presentContest(fresh),
+      confirmed: solves.length,
+      syncSkipped: lockedOut,
     });
   })
 );
