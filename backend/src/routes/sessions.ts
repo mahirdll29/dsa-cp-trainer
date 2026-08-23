@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Prisma, SessionStatus } from "@prisma/client";
+import { ContestStatus, Prisma, SessionStatus } from "@prisma/client";
 import { asyncHandler } from "../lib/asyncHandler";
 import { consumeAiRateLimit } from "../lib/aiRateLimit";
 import prisma from "../lib/prisma";
@@ -98,6 +98,28 @@ router.post(
 
     if (!problem) {
       return res.status(404).json({ error: "Problem not found" });
+    }
+
+    // A contest and a practice session are two modes of the same activity, so one
+    // blocks the other. The mirror of this check lives in routes/contests.ts.
+    //
+    // endsAt is compared here rather than routing through the contest module's lazy
+    // expiry: a contest whose clock has run out must not block anything, and whether
+    // its row has been finalized yet is the contest page's business, not this one's.
+    const contest = await prisma.contestSession.findFirst({
+      where: {
+        userId: req.userId,
+        status: ContestStatus.ACTIVE,
+        endsAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+
+    if (contest) {
+      return res.status(409).json({
+        error: "Finish your contest before starting a practice session",
+        contestId: contest.id,
+      });
     }
 
     // Read-then-write, and the window is real: two concurrent starts can both see
