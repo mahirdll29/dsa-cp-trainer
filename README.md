@@ -158,6 +158,18 @@ Problem ─→ ProblemTopic ←─ Topic
 
 > A URL that cannot be parsed is `400`, one parsed but not in the catalog is `404` echoing the parsed id, and one in the catalog carrying no topics is `422`. An empty result set with a valid source is a normal `200`.
 
+### Progress Analytics (`/api/analytics`)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/analytics/trajectory` | required | Per-topic mastery over time, bucketed daily. `?days=1..365` and `?tzOffsetMinutes=` optional |
+| `GET` | `/api/analytics/summary` | required | Breakthroughs, solve streak and the week's biggest movers in one response |
+
+> **The log records only what changed, so a topic with no row for a week means one of two things.** If it still has a mastery row the value persisted and carries forward; if it does not, the topic lost its data and the series returns `null` from its last recorded day onward. Nothing is interpolated and no line is drawn across a gap, because a gap is a period we have no measurement for rather than a score of zero.
+
+> **A breakthrough is a topic crossing 0.6 upward and still being above it the next day.** `unknown -> strong` does not count, or every topic getting its first data would fire one. A crossing in the most recent day has no following day to check yet and is reported separately as pending, never as confirmed.
+
+> Both responses carry `historyDays` and `sufficient`, so "nothing happened" and "not enough data to say" stay distinguishable. Days are bucketed against a caller-supplied UTC offset, defaulting to +330; the streak is counted up to the last successful sync rather than to now, and returns that timestamp.
+
 All non-GET requests are protected by an Origin-header CSRF check (registered globally).
 
 ---
