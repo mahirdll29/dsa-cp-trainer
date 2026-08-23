@@ -132,3 +132,14 @@ export function formatDuration(startIso: string, endIso: string): string {
   if (!Number.isFinite(start) || !Number.isFinite(end)) return NO_DATA;
   return formatClock((end - start) / 1000);
 }
+
+// A "YYYY-MM-DD" bucket key, not an instant: parsed as UTC so the label cannot slide a
+// day in the reader's own timezone, which is the whole point of the server having
+// bucketed it already.
+export function formatDay(day: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${day}T00:00:00Z`));
+}

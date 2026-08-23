@@ -204,3 +204,82 @@ export type SimilarResponse = {
   bands: DifficultyBand[];
   results: SimilarResult[];
 };
+
+// src/routes/analytics.ts - progress analytics (Module 11).
+//
+// `series` is aligned to `buckets` index for index, and a null IS the value at that
+// bucket rather than a missing entry: the topic had no data then, and nothing may be
+// drawn across it. Omitting the entry instead would make a gap indistinguishable from
+// a short array, which is exactly the ambiguity the endpoint exists to remove.
+export type TopicState = "weak" | "strong" | "unknown";
+
+export type TrajectoryTopic = {
+  topicId: string;
+  name: string;
+  slug: string;
+  series: (number | null)[];
+  // Null exactly when state is "unknown", for the same reason UnknownTopicView carries
+  // no score: a topic with no data must not be renderable as one scored zero.
+  current: {
+    masteryScore: number;
+    solvedCount: number;
+    attemptedCount: number;
+  } | null;
+  state: TopicState;
+};
+
+export type TrajectoryResponse = {
+  days: number;
+  tzOffsetMinutes: number;
+  buckets: string[];
+  // historyDays counts buckets holding a real logged row, so "nothing happened" and
+  // "not enough data to say" are distinguishable without counting array elements.
+  historyDays: number;
+  sufficient: boolean;
+  topics: TrajectoryTopic[];
+};
+
+export type Breakthrough = {
+  topicId: string;
+  name: string;
+  slug: string;
+  date: string;
+  scoreBefore: number;
+  scoreAfter: number;
+};
+
+export type WeeklyMove = {
+  topicId: string;
+  name: string;
+  slug: string;
+  from: number;
+  to: number;
+  delta: number;
+};
+
+// `days` is the trailing run either way; `current` says whether it is still alive as of
+// the last sync. A broken run reports its real length rather than collapsing to zero.
+export type Streak = {
+  days: number;
+  current: boolean;
+  lastSolveDay: string | null;
+  asOf: string;
+};
+
+export type SummaryResponse = {
+  days: number;
+  tzOffsetMinutes: number;
+  historyDays: number;
+  sufficient: boolean;
+  breakthroughs: Breakthrough[];
+  // A crossing in the most recent bucket has no hold bucket yet, so it is reported
+  // separately rather than counted as confirmed.
+  pendingBreakthroughs: Breakthrough[];
+  weeklyDelta: WeeklyMove[];
+  streak: Streak | null;
+  reasons: {
+    breakthroughs?: string;
+    weeklyDelta?: string;
+    streak?: string;
+  };
+};

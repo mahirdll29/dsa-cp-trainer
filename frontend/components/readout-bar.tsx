@@ -76,6 +76,7 @@ export function ReadoutBar() {
     { href: "/", label: "Instrument" },
     { href: "/practice", label: "Practice" },
     { href: "/similar", label: "Adjacent" },
+    { href: "/trajectory", label: "Trajectory" },
     { href: "/revision", label: "Revision" },
     { href: "/integrations", label: "Accounts" },
   ];
