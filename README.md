@@ -170,6 +170,24 @@ Problem ─→ ProblemTopic ←─ Topic
 
 > Both responses carry `historyDays` and `sufficient`, so "nothing happened" and "not enough data to say" stay distinguishable. Days are bucketed against a caller-supplied UTC offset, defaulting to +330; the streak is counted up to the last successful sync rather than to now, and returns that timestamp.
 
+### Contest Mode (`/api/contests`)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/contests/options` | required | Allowed durations and sizes, plus the difficulty spread each size produces |
+| `POST` | `/api/contests` | required | Start a timed set. `{ durationMinutes, size }`, both rejected unless they are allowed values |
+| `GET` | `/api/contests/active` | required | The running contest with every problem's claim state, or `null` |
+| `GET` | `/api/contests/:id` | required | One contest in full, so a mid-contest refresh restores everything |
+| `POST` | `/api/contests/:id/problems/:pid/claim` | required | Mark a problem solved or unmark it, while the clock is running |
+| `POST` | `/api/contests/:id/finalize` | required | End as `COMPLETED` or `ABANDONED`. Idempotent |
+| `POST` | `/api/contests/:id/reconcile` | required | Check claims against real provider submissions. `409` while the contest is still `ACTIVE` |
+| `GET` | `/api/contests/history` | required | Finished contests, newest first, capped at 50 |
+
+> **Problem selection is its own thing, not the recommendation engine.** The engine ranks by weak topics and due revisions, which is the wrong answer for a contest; this picks a fixed spread (1 easy / 2 medium / 2 hard at size 5) at random from everything you have not already solved. Calibration is by normalized band, never by a cross-provider rating mapping. If a band cannot be filled the request fails naming that band and the counts, rather than quietly substituting from another one.
+
+> **`endsAt` is the only authority, and expiry is lazy.** A contest whose time has run out is finalized by the next read of it - there is no scheduler, no background job and no server timer. Running out of time is `COMPLETED`; `ABANDONED` means you quit early. A contest and a practice session cannot run at the same time, in either direction.
+
+> **Solves are self-reported during the contest and verified afterwards.** Real-time detection is impossible against a pull-based sync, so you mark your own, and reconciliation later confirms any problem whose provider submission timestamp falls inside the contest window. It is a separate explicit step because it needs a full sync, which measures 45 seconds. Until it runs, `reconciledAt` is null and the results say so rather than implying nothing was solved. There is no simulated rating, performance score or percentile anywhere - there is nothing to compare against, so any number would be invented.
+
 All non-GET requests are protected by an Origin-header CSRF check (registered globally).
 
 ---
