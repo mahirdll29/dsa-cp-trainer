@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import aiRoutes from "./routes/ai";
+import analyticsRoutes from "./routes/analytics";
 import authRoutes from "./routes/auth";
 import codeforcesRoutes from "./routes/codeforces";
 import leetcodeRoutes from "./routes/leetcode";
@@ -36,6 +37,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+app.use("/api/analytics", analyticsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/mastery", masteryRoutes);
 app.use("/api/problems", problemRoutes);
