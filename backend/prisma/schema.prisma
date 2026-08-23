@@ -45,6 +45,15 @@ enum SessionStatus {
   ABANDONED
 }
 
+// Separate from SessionStatus rather than shared. A contest that runs out of time
+// has COMPLETED normally, which is not what SOLVED means for a single problem, and
+// merging the two would make one enum answer two different questions.
+enum ContestStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
 // ---------------------------------------------------------------------------
 // User
 //
@@ -60,13 +69,14 @@ model User {
   name      String
   createdAt DateTime @default(now())
 
-  // All six are the user's OWN data, so all six cascade on delete.
+  // All seven are the user's OWN data, so all seven cascade on delete.
   linkedAccounts   LinkedAccount[]
   userProblems     UserProblem[]
   topicMasteries   TopicMastery[]
   revisionItems    RevisionItem[]
   masteryLogs      MasteryLog[]
   practiceSessions PracticeSession[]
+  contestSessions  ContestSession[]
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +168,7 @@ model Problem {
   userProblems     UserProblem[]
   revisionItems    RevisionItem[]
   practiceSessions PracticeSession[]
+  contestProblems  ContestProblem[]
 
   // The same problem must never be imported twice. Scoped by provider because
   // the two providers' id spaces are unrelated and could collide by coincidence.
@@ -438,4 +449,81 @@ model SessionHint {
   // No separate @@index([sessionId]) - this unique serves both the hint lookup
   // and the cascade check through its leftmost prefix.
   @@unique([sessionId, level])
+}
+
+// ---------------------------------------------------------------------------
+// ContestSession - one timed set of problems.
+//
+// endsAt is stored rather than derived from startedAt + durationMinutes, and it
+// is the only materialized derived value in this schema. It is the authority
+// every claim is checked against, so it belongs in the WHERE clause where the
+// database decides; a value recomputed in application code on each request can
+// disagree with itself, and editing durationMinutes would silently move a
+// deadline that has already passed. See architecture.md 14.
+//
+// No solvedCount column: it is the number of ContestProblem rows with a
+// confirmed or claimed timestamp, the same rule as PracticeSession's absent
+// hintsUsed.
+// ---------------------------------------------------------------------------
+
+model ContestSession {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Cascade: the user's own contest history.
+
+  startedAt       DateTime      @default(now())
+  durationMinutes Int
+  endsAt          DateTime
+  status          ContestStatus @default(ACTIVE)
+  finalizedAt     DateTime?
+
+  // Null means reconciliation never ran, which is the normal state right after a
+  // contest ends. Without this column that is indistinguishable from a pass that
+  // ran and confirmed nothing.
+  reconciledAt DateTime?
+
+  problems ContestProblem[]
+
+  // The active-contest lookup, which runs on the contest page and on every
+  // practice session start.
+  @@index([userId, status])
+  // History, newest first. KEPT alongside the index above for the reason spelled
+  // out on PracticeSession: it cannot serve ORDER BY startedAt.
+  @@index([userId, startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// ContestProblem - one problem in one contest, and what the user did with it.
+//
+// Two timestamps because they answer different questions. claimedSolvedAt is
+// what the user said during the contest; confirmedSolvedAt is what the provider
+// says once a sync has run. Either can exist without the other, and neither is
+// an error.
+// ---------------------------------------------------------------------------
+
+model ContestProblem {
+  id String @id @default(cuid())
+
+  contestSessionId String
+  contest          ContestSession @relation(fields: [contestSessionId], references: [id], onDelete: Cascade)
+  // Cascade: a problem row has no meaning outside its contest.
+
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Restrict)
+  // Restrict: a contest is evidence of work the user did, not the problem's to erase.
+
+  position Int
+
+  claimedSolvedAt   DateTime?
+  confirmedSolvedAt DateTime?
+
+  // Position is the contest's running order, so two problems cannot share one.
+  @@unique([contestSessionId, position])
+  // The selector already excludes duplicates; this is what makes it true.
+  @@unique([contestSessionId, problemId])
+  // The Restrict check on problem delete. Neither unique above starts with
+  // problemId, so without this the check is a sequential scan.
+  @@index([problemId])
 }
