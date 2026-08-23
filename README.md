@@ -370,12 +370,11 @@ and a bypassable verification flow would be worse than an honest gap.
 
 ## Roadmap — v2
 
-The v1 core loop (import → measure → recommend → review) is complete and deployed. v2 is in progress — practice sessions and the similar problem finder have shipped. Here's what's still ahead:
+The v1 core loop (import → measure → recommend → review) is complete and deployed. v2 is in progress — practice sessions, the similar problem finder and progress analytics have shipped. Here's what's still ahead:
 
 | Feature | Description |
 |---|---|
 | **Contest Mode** | Timed practice sets that simulate real contest conditions with problems calibrated to your current rating |
-| **Progress Analytics** | Visualize your mastery trajectory over time — weekly trends, topic breakthrough detection, and streak tracking |
 
 > Have a feature idea? [Open an issue](https://github.com/mahirdll29/dsa-cp-trainer/issues) — contributions welcome.
 
