@@ -75,6 +75,7 @@ export function ReadoutBar() {
   const links = [
     { href: "/", label: "Instrument" },
     { href: "/practice", label: "Practice" },
+    { href: "/contest", label: "Contest" },
     { href: "/similar", label: "Adjacent" },
     { href: "/trajectory", label: "Trajectory" },
     { href: "/revision", label: "Revision" },

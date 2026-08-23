@@ -283,3 +283,73 @@ export type SummaryResponse = {
     streak?: string;
   };
 };
+
+// src/routes/contests.ts - contest mode (Module 12).
+export type ContestStatus = "ACTIVE" | "COMPLETED" | "ABANDONED";
+
+// The spread table is served rather than duplicated here, so the setup screen cannot
+// promise a shape the selector does not build. Keys are sizes as strings, because JSON
+// object keys always are.
+export type ContestOptions = {
+  durationMinutes: number[];
+  sizes: number[];
+  spread: Record<string, Record<DifficultyBand, number>>;
+};
+
+// Its own type rather than an alias of SessionProblem. Same fields today, different
+// route, and letting them drift silently would be the bug.
+export type ContestProblemDetail = {
+  id: string;
+  title: string;
+  url: string;
+  provider: Provider;
+  difficultyRaw: string;
+  difficultyBand: DifficultyBand;
+  problemTopics: { topic: { name: string } }[];
+};
+
+// Two timestamps answering two questions: what the user said during the contest, and
+// what the provider says once a sync has run. Either can exist without the other and
+// neither is an error.
+export type ContestEntry = {
+  position: number;
+  claimedSolvedAt: string | null;
+  confirmedSolvedAt: string | null;
+  problem: ContestProblemDetail;
+};
+
+// remainingSeconds is computed by the server. The countdown is seeded from it and never
+// from endsAt read against a browser clock.
+export type Contest = {
+  id: string;
+  startedAt: string;
+  durationMinutes: number;
+  endsAt: string;
+  status: ContestStatus;
+  finalizedAt: string | null;
+  // Null means reconciliation never ran, which is the normal state right after a
+  // contest ends - not the same fact as "it ran and confirmed nothing".
+  reconciledAt: string | null;
+  problems: ContestEntry[];
+  remainingSeconds: number;
+};
+
+export type ContestSummary = {
+  id: string;
+  startedAt: string;
+  durationMinutes: number;
+  status: ContestStatus;
+  finalizedAt: string | null;
+  reconciledAt: string | null;
+  size: number;
+  claimed: number;
+  confirmed: number;
+};
+
+export type ReconcileResult = {
+  contest: Contest;
+  confirmed: number;
+  // True when a sync was already running and was skipped, which is why reconciledAt can
+  // come back still null from a successful call.
+  syncSkipped: boolean;
+};
