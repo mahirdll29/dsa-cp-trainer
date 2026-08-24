@@ -159,6 +159,14 @@ therefore solve-biased. This is documented in `architecture.md`, not patched wit
   (`architecture.md` §9.2)
 - No business logic on the client. The frontend renders what endpoints return and adds no API
   surface. A feature needing a new endpoint is a backend module, not a quiet frontend addition.
+- **Tests stop at the pure functions.** Vitest covers the mastery formula and band cutoffs, the
+  revision interval ladder, the analytics carry-forward and streak rules, the hint cooldown gate,
+  problem URL parsing, the similarity weighting and tie-break, and the provider mappings — the
+  logic that is frozen, is a function of its arguments, and fails silently rather than loudly.
+  Everything past that line stays a non-goal: no route or HTTP tests, no test database, no mocking
+  of Prisma or any provider, no frontend tests, no CI, no coverage thresholds, no snapshots. A
+  function that cannot be tested without one of those is out of scope — say so rather than
+  reshaping it to fit. See `architecture.md` §15.
 
 ## v2 build order
 
