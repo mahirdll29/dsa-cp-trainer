@@ -44,7 +44,7 @@ type ProblemWithTopics = {
   problemTopics: { topic: { name: string } }[];
 };
 
-function toRecommendation(
+export function toRecommendation(
   problem: ProblemWithTopics,
   reason: string
 ): Recommendation {
@@ -62,7 +62,7 @@ function toRecommendation(
 }
 
 // Alphabetically first, so a reason naming a topic never changes between calls.
-function primaryTopicName(problem: ProblemWithTopics): string | null {
+export function primaryTopicName(problem: ProblemWithTopics): string | null {
   const names = problem.problemTopics.map((link) => link.topic.name).sort();
   return names[0] ?? null;
 }

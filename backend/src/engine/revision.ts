@@ -1,16 +1,16 @@
 import { SolveStatus } from "@prisma/client";
 import prisma from "../lib/prisma";
 
-const REVISION_INTERVALS = [1, 3, 7, 14, 30] as const;
+export const REVISION_INTERVALS = [1, 3, 7, 14, 30] as const;
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function addDays(from: Date, days: number): Date {
+export function addDays(from: Date, days: number): Date {
   return new Date(from.getTime() + days * MILLISECONDS_PER_DAY);
 }
 
 // Capped at the last rung so the ladder never runs off the end of the array.
-function intervalForRepetition(repetitionCount: number): number {
+export function intervalForRepetition(repetitionCount: number): number {
   const index = Math.min(repetitionCount, REVISION_INTERVALS.length - 1);
   return REVISION_INTERVALS[index];
 }

@@ -36,7 +36,7 @@ const RESULT_SELECT = {
 // Rare topics carry the ranking - a shared "segment tree" says far more than a shared
 // "math". THE 1 + IS LOAD-BEARING: under plain ln(N/df) a topic on every problem weighs
 // zero, and a source whose topics are all universal divides zero by zero into NaN.
-function topicWeight(documentFrequency: number, catalogSize: number): number {
+export function topicWeight(documentFrequency: number, catalogSize: number): number {
   return Math.log(1 + catalogSize / documentFrequency);
 }
 
@@ -44,11 +44,11 @@ function topicWeight(documentFrequency: number, catalogSize: number): number {
 // keeps its rating there as text and LeetCode keeps a word, so this decides a tie
 // between two rated problems and is never a filter - the two scales do not map onto
 // each other, and inventing a mapping is the thing this module refuses to do.
-function ratingOf(provider: Provider, difficultyRaw: string): number | null {
+export function ratingOf(provider: Provider, difficultyRaw: string): number | null {
   return provider === Provider.CODEFORCES ? Number(difficultyRaw) : null;
 }
 
-function ratingDistance(source: number | null, candidate: number | null): number {
+export function ratingDistance(source: number | null, candidate: number | null): number {
   if (source === null || candidate === null) return Number.POSITIVE_INFINITY;
   return Math.abs(source - candidate);
 }
@@ -56,7 +56,7 @@ function ratingDistance(source: number | null, candidate: number | null): number
 // Rounded BEFORE the sort. Two scores differing in the fifteenth decimal are the same
 // score, and letting float noise order them would undo the determinism the id below
 // exists to guarantee.
-function roundScore(score: number): number {
+export function roundScore(score: number): number {
   return Math.round(score * 10_000) / 10_000;
 }
 
@@ -70,7 +70,7 @@ type ScoredCandidate = {
 // Total by construction: problemId is unique, so the last term always decides. Two
 // unrated candidates subtract Infinity from Infinity, and NaN is falsy, so they fall
 // through to the id exactly as an equal distance does.
-const byRelevance = (a: ScoredCandidate, b: ScoredCandidate) =>
+export const byRelevance = (a: ScoredCandidate, b: ScoredCandidate) =>
   b.score - a.score ||
   a.ratingDistance - b.ratingDistance ||
   a.problemId.localeCompare(b.problemId);
