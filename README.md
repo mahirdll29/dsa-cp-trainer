@@ -183,5 +183,4 @@ A few decisions that would otherwise look arbitrary:
   contest whose clock ran out is finalized the next time someone reads it.
 
 ## License
-
 Built for learning and as a portfolio piece.
