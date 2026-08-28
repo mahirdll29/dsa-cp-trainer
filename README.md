@@ -1,6 +1,6 @@
 # DSA/CP Trainer
 
-`v2.0` · [Live app](https://dsa-cp-trainer.vercel.app)
+[Live app](https://dsa-cp-trainer.vercel.app)
 
 Pulls your solve history from LeetCode and Codeforces, works out which topics you're actually weak
 at, and tells you what to do next. Weak topics first, at a difficulty just above where you're
